@@ -1,0 +1,15 @@
+muscle-grow:
+  alioss:
+    access-key-id: ${OSS_ACCESS_KEY_ID:}
+    access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+    endpoint: oss-cn-shenzhen.aliyuncs.com
+    bucket-name: java-ai-lyy
+
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    host: localhost
+    port: 3306
+    database: muscle_grow
+    username: root
+    password: 20041009

@@ -1,0 +1,128 @@
+package com.musclegrow.service.impl;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.musclegrow.constant.MessageConstant;
+import com.musclegrow.constant.StatusConstant;
+import com.musclegrow.dto.SupplementDTO;
+import com.musclegrow.dto.SupplementPageQueryDTO;
+import com.musclegrow.entity.Supplement;
+import com.musclegrow.entity.SupplementDetail;
+import com.musclegrow.exception.DeletionNotAllowedException;
+import com.musclegrow.mapper.SetmealSupplementMapper;
+import com.musclegrow.mapper.SupplementMapper;
+import com.musclegrow.result.PageResult;
+import com.musclegrow.service.SupplementDetailService;
+import com.musclegrow.service.SupplementService;
+import com.musclegrow.vo.SupplementVO;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
+
+import java.util.List;
+
+@Service
+@Slf4j
+public class SupplementServicImpl extends ServiceImpl<SupplementMapper, Supplement> implements SupplementService {
+    @Autowired
+    private SupplementMapper supplementMapper;
+
+    @Autowired
+    private SupplementDetailService supplementDetailService;
+
+    @Autowired
+    private SetmealSupplementMapper setmealSupplementMapper;
+
+    /**
+     * 新增补剂和对应的细节
+     *
+     * @param supplementDTO
+     */
+    @Transactional
+    @Override
+    public void saveWithSupplementDetail(SupplementDTO supplementDTO) {
+        Supplement supplement = new Supplement();
+        BeanUtils.copyProperties(supplementDTO, supplement);
+
+        supplementMapper.insert(supplement);
+
+        // 获取insert语句生成的主键值
+        Long supplementId = supplement.getId();
+
+        List<SupplementDetail> details = supplementDTO.getDetails();
+        if (details != null && details.size() > 0) {
+            details.forEach(detail -> {
+                detail.setSupplementId(supplementId);
+            });
+            // 使用 IService 提供的 saveBatch 方法实现批量插入
+            supplementDetailService.saveBatch(details);
+        }
+
+    }
+
+    @Override
+    public PageResult pageQuery(SupplementPageQueryDTO supplementPageQueryDTO) {
+        // 创建 MyBatis-Plus 的 Page 对象
+        Page<SupplementVO> page = new Page<>(supplementPageQueryDTO.getPage(), supplementPageQueryDTO.getPageSize());
+
+        // 执行查询
+        Page<SupplementVO> pageResult = supplementMapper.pageQuery(page, supplementPageQueryDTO);
+
+        // 封装返回结果
+        return new PageResult(pageResult.getTotal(), pageResult.getRecords());
+    }
+
+    /**
+     * 补剂批量删除
+     *
+     * @param ids
+     */
+    @Transactional // 事务
+    public void deleteBatch(List<Long> ids) {
+        // 判断当前补剂是否能够删除---是否存在起售中的补剂？？
+        for (Long id : ids) {
+            Supplement supplement = supplementMapper.selectById(id);
+            if (supplement.getStatus() == StatusConstant.ENABLE) {
+                // 当前补剂处于起售中，不能删除
+                throw new DeletionNotAllowedException(MessageConstant.SUPPLEMENT_ON_SALE);
+            }
+        }
+
+        // 判断当前补剂是否能够删除---是否被套餐关联了？？
+        List<Long> setmealIds = setmealSupplementMapper.getSetmealIdsByDishIds(ids);// 对应：select setmeal_id from setmeal_supplement
+                                                                         // where supplement_id in (1,2,3,4)
+        if (setmealIds != null && setmealIds.size() > 0) {
+            // 当前补剂被套餐关联了，不能删除
+            throw new DeletionNotAllowedException(MessageConstant.SUPPLEMENT_BE_RELATED_BY_SETMEAL);
+        }
+
+        // 删除补剂表中的补剂数据
+        for (Long id : ids) {
+            supplementMapper.deleteById(id);// 后绪步骤实现
+            // 删除补剂关联的细节数据
+            supplementDetailService.deleteBySupplementId(id);// 后绪步骤实现
+        }
+    }
+
+    @Override
+    public SupplementVO getByIdWithSupplementDetail(Long id) {
+        //根据id查询补剂数据
+        Supplement supplement = supplementMapper.selectById(id);
+
+        //根据菜品id查询口味数据
+
+        List<SupplementDetail> supplementDetails =
+                supplementDetailService.list(new LambdaQueryWrapper<SupplementDetail>().eq(SupplementDetail::getSupplementId, id));
+
+        //将查询到的数据封装到vo
+        SupplementVO supplementVO = new SupplementVO();
+        BeanUtils.copyProperties(supplement, supplementVO);
+        supplementVO.setDetails(supplementDetails);
+
+        return supplementVO;
+    }
+}
