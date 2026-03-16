@@ -8,6 +8,8 @@ import com.musclegrow.vo.SupplementVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 @Mapper
 public interface SupplementMapper extends BaseMapper<Supplement> {
 
@@ -18,4 +20,8 @@ public interface SupplementMapper extends BaseMapper<Supplement> {
      * @return 分页结果
      */
     Page<SupplementVO> pageQuery(Page<SupplementVO> page, @Param("dto") SupplementPageQueryDTO dto);
+
+    List<Supplement> list(Supplement supplement);
+
+    List<Supplement> getBySetmealId(Long id);
 }

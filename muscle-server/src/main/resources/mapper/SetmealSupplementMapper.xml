@@ -2,6 +2,12 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
 <mapper namespace="com.musclegrow.mapper.SetmealSupplementMapper">
+    <insert id="insertBatch">
+        insert into setmeal_supplement (setmeal_id, supplement_id,name, price,copies) values
+        <foreach collection="list" item="item" separator=",">
+            (#{item.setmealId},#{item.supplementId},#{item.name},#{item.price},#{item.copies})
+        </foreach>
+    </insert>
 
 
     <select id="getSetmealIdsByDishIds" resultType="java.lang.Long">

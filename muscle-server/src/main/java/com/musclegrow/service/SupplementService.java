@@ -20,4 +20,8 @@ public interface SupplementService extends IService<Supplement> {
     void deleteBatch(List<Long> ids);
 
     SupplementVO getByIdWithSupplementDetail(Long id);
+
+    void updateWithDetail(SupplementDTO supplementDTO);
+
+    void startOrStop(Integer status, Long id);
 }

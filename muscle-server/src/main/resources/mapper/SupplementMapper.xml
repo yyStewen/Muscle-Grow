@@ -20,5 +20,26 @@
         </where>
         order by s.update_time desc
     </select>
+    <select id="list" resultType="com.musclegrow.entity.Supplement">
+        select * from supplement
+        <where>
+
+            <if test="name != null">
+                and name like concat('%',#{name},'%')
+            </if>
+            <if test="categoryId != null">
+                and category_id = #{categoryId}
+            </if>
+            <if test="status != null">
+                and status = #{status}
+            </if>
+        </where>
+        order by create_time desc
+    </select>
+    <select id="getBySetmealId" resultType="com.musclegrow.entity.Supplement">
+        select s.* from supplement s
+        left join setmeal_supplement ss on s.id = ss.supplement_id
+        where ss.setmeal_id = #{setmealId}
+    </select>
 
 </mapper>

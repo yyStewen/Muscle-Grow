@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   getSupplementPage,
@@ -7,10 +8,11 @@ import {
   supplementStatusByStatus,
   supplementCategoryList,
   addSupplement,
-  editSupplement,
-  querySupplementById
+  editSupplement
 } from '@/api/supplement';
 import { Plus } from '@element-plus/icons-vue';
+
+const router = useRouter();
 
 // --- 查询相关的状态 ---
 const name = ref('');
@@ -184,48 +186,8 @@ const openAddDialog = () => {
 };
 
 // 打开修改 (由于可能还需要后端的按id查询接口，暂时做基本回显)
-const openEditDialog = async (row) => {
-  dialogTitle.value = '修改补剂';
-  try {
-    const res = await querySupplementById(row.id);
-    if (res.code === 1 && res.data) {
-      const data = res.data;
-      // 解析 value 字符串为数组以供前端组件使用
-      const parsedDetails = (data.details || []).map(item => {
-        let valArr = [];
-        try {
-          if(item.value) {
-            valArr = JSON.parse(item.value);
-            // 兼容非JSON格式数据
-            if(!Array.isArray(valArr)) valArr = item.value.split(','); // 退化兼容
-          }
-        } catch(e) {
-          valArr = item.value.split(',').map(s=>s.trim()).filter(Boolean);
-        }
-        return {
-          id: item.id,
-          name: item.name,
-          valueArr: valArr
-        };
-      });
-
-      ruleForm.value = {
-        id: data.id,
-        name: data.name,
-        categoryId: data.categoryId,
-        price: data.price,
-        image: data.image,
-        description: data.description,
-        status: data.status,
-        details: parsedDetails
-      };
-      dialogVisible.value = true;
-    } else {
-      ElMessage.error(res.msg || '获取详情失败');
-    }
-  } catch (e) {
-    console.error(e);
-  }
+const openEditDialog = (row) => {
+  router.push({ path: '/supplement/edit', query: { id: row.id } });
 };
 
 const handleCloseDialog = () => {

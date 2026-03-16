@@ -7,9 +7,11 @@ import com.musclegrow.constant.MessageConstant;
 import com.musclegrow.constant.StatusConstant;
 import com.musclegrow.dto.SupplementDTO;
 import com.musclegrow.dto.SupplementPageQueryDTO;
+import com.musclegrow.entity.Setmeal;
 import com.musclegrow.entity.Supplement;
 import com.musclegrow.entity.SupplementDetail;
 import com.musclegrow.exception.DeletionNotAllowedException;
+import com.musclegrow.mapper.SetmealMapper;
 import com.musclegrow.mapper.SetmealSupplementMapper;
 import com.musclegrow.mapper.SupplementMapper;
 import com.musclegrow.result.PageResult;
@@ -23,11 +25,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
 @Slf4j
 public class SupplementServicImpl extends ServiceImpl<SupplementMapper, Supplement> implements SupplementService {
+    @Autowired
+    private SetmealMapper setmealMapper;
+
     @Autowired
     private SupplementMapper supplementMapper;
 
@@ -63,6 +69,12 @@ public class SupplementServicImpl extends ServiceImpl<SupplementMapper, Suppleme
         }
 
     }
+
+    /**
+     * 补剂分页查询
+     * @param supplementPageQueryDTO
+     * @return
+     */
 
     @Override
     public PageResult pageQuery(SupplementPageQueryDTO supplementPageQueryDTO) {
@@ -108,6 +120,11 @@ public class SupplementServicImpl extends ServiceImpl<SupplementMapper, Suppleme
         }
     }
 
+    /**
+     * 补剂查询回显
+     * @param id
+     * @return
+     */
     @Override
     public SupplementVO getByIdWithSupplementDetail(Long id) {
         //根据id查询补剂数据
@@ -124,5 +141,71 @@ public class SupplementServicImpl extends ServiceImpl<SupplementMapper, Suppleme
         supplementVO.setDetails(supplementDetails);
 
         return supplementVO;
+    }
+
+    /**
+     * 修改补剂信息，同时需要更新对应的细节和规格数据
+     *
+     * @param supplementDTO
+     */
+    @Override
+    public void updateWithDetail(SupplementDTO supplementDTO) {
+        Supplement supplement = new Supplement();
+        BeanUtils.copyProperties(supplementDTO, supplement);
+
+        //修改基本信息
+        supplementMapper.updateById(supplement);
+
+        //删除原有细节数据
+        supplementDetailService.deleteBySupplementId(supplementDTO.getId());
+
+        //重新插入细节数据
+        List<SupplementDetail> details = supplementDTO.getDetails();
+        if (!CollectionUtils.isEmpty(details)) {
+            details.forEach(detail -> {
+                detail.setSupplementId(supplementDTO.getId());
+            });
+            supplementDetailService.saveBatch(details);
+        }
+
+    }
+    /**
+     * 补剂起售停售
+     *
+     * @param status
+     * @param id
+     */
+    @Override
+    public void startOrStop(Integer status, Long id) {
+        Supplement supplement = Supplement.builder()
+                .id(id)
+                .status(status)
+                .build();
+        supplementMapper.updateById(supplement);
+
+        // 如果是停售操作，还需要将包含当前补剂的套餐也停售
+        if (status == StatusConstant.DISABLE) {
+            //通过补剂id查询套餐id
+            List<Long> dishIds = new ArrayList<>();
+            dishIds.add(id);
+
+            // select setmeal_id from setmeal_supplement where supplement_id in (?,?,?)
+            List<Long> setmealIds = setmealSupplementMapper.getSetmealIdsByDishIds(dishIds);
+            // 如果是停售操作，还需要将包含当前补剂的套餐也停售
+            if (setmealIds != null && setmealIds.size() > 0) {
+                for (Long setmealId : setmealIds) {
+                    Setmeal setmeal = Setmeal.builder()
+                            .id(setmealId)
+                            .status(StatusConstant.DISABLE)
+                            .build();
+                    setmealMapper.updateById(setmeal);
+                }
+            }
+
+
+        }
+
+
+
     }
 }

@@ -14,4 +14,11 @@ public interface SetmealSupplementMapper extends BaseMapper<SetmealSupplement> {
      * @return
      */
     List<Long> getSetmealIdsByDishIds(List<Long> ids);
+
+    /**
+     * 批量插入补剂和套餐的关联关系
+     * @param setmealSupplements
+     */
+
+    void insertBatch(List<SetmealSupplement> setmealSupplements);
 }

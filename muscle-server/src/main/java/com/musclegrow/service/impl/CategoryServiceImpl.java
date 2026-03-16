@@ -7,6 +7,7 @@ import com.musclegrow.constant.StatusConstant;
 import com.musclegrow.dto.CategoryDTO;
 import com.musclegrow.dto.CategoryPageQueryDTO;
 import com.musclegrow.entity.Category;
+import com.musclegrow.entity.Setmeal;
 import com.musclegrow.entity.Supplement;
 import com.musclegrow.exception.DeletionNotAllowedException;
 import com.musclegrow.mapper.CategoryMapper;
@@ -95,7 +96,9 @@ public class CategoryServiceImpl implements CategoryService {
         }
 
         // 查询当前分类是否关联了套餐，如果关联了就抛出业务异常
-        Integer setmealCount = setmealMapper.countByCategoryId(id);
+        LambdaQueryWrapper<Setmeal> setmealWrapper = new LambdaQueryWrapper<>();
+        setmealWrapper.eq(Setmeal::getCategoryId, id);
+        Long setmealCount = setmealMapper.selectCount(setmealWrapper);
         if (setmealCount > 0) {
             // 当前分类下有套餐，不能删除
             throw new DeletionNotAllowedException(MessageConstant.CATEGORY_BE_RELATED_BY_SETMEAL);

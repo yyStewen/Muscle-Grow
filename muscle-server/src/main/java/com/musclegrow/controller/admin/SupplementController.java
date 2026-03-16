@@ -82,4 +82,31 @@ public class SupplementController {
         SupplementVO supplementVO = supplementService.getByIdWithSupplementDetail(id);//后绪步骤实现
         return Result.success(supplementVO);
     }
+
+    /**
+     * 修改补剂
+     *
+     * @param supplementDTO
+     * @return
+     */
+    @PutMapping
+    @ApiOperation("修改补剂")
+    public Result update(@RequestBody SupplementDTO supplementDTO) {
+        log.info("修改菜品：{}", supplementDTO);
+        supplementService.updateWithDetail(supplementDTO);
+        return Result.success();
+    }
+
+    /**
+     * 补剂起售停售
+     * @param status
+     * @param id
+     * @return
+     */
+    @PostMapping("/status/{status}")
+    @ApiOperation("补剂起售停售")
+    public Result<String> startOrStop(@PathVariable Integer status, Long id){
+        supplementService.startOrStop(status,id);
+        return Result.success();
+    }
 }
