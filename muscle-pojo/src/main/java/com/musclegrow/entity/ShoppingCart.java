@@ -43,7 +43,7 @@ public class ShoppingCart implements Serializable {
     private Long setmealId;
 
     //口味
-    private String dishFlavor;
+    private String supplementDetail;
 
     //数量
     private Integer number;

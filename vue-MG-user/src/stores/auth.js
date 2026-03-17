@@ -1,43 +1,73 @@
 import { computed, reactive } from 'vue';
 
-const STORAGE_KEY = 'mg-user-profile';
+const STORAGE_KEY = 'mg-user-auth';
 
-const loadProfile = () => {
+const loadAuthState = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) {
+      return {
+        token: '',
+        profile: null
+      };
+    }
+
+    const parsed = JSON.parse(raw);
+    return {
+      token: parsed?.token || '',
+      profile: parsed?.profile || null
+    };
   } catch (error) {
-    return null;
+    return {
+      token: '',
+      profile: null
+    };
   }
 };
 
-const state = reactive({
-  profile: loadProfile()
-});
+const state = reactive(loadAuthState());
 
-const saveProfile = (profile) => {
-  state.profile = profile;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+const persistAuthState = () => {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      token: state.token,
+      profile: state.profile
+    })
+  );
 };
 
-const clearProfile = () => {
+const saveAuthState = (payload) => {
+  state.token = payload?.token || '';
+  state.profile = payload?.profile || null;
+  persistAuthState();
+};
+
+export const clearAuthState = () => {
+  state.token = '';
   state.profile = null;
   localStorage.removeItem(STORAGE_KEY);
 };
 
-const isLoggedIn = computed(() => Boolean(state.profile?.name));
+export const getToken = () => state.token || '';
+
+const isLoggedIn = computed(() => Boolean(state.token));
 
 export const useAuthStore = () => {
   const login = (payload) => {
-    saveProfile({
-      name: payload.name,
-      phone: payload.phone || '',
-      avatar: payload.avatar || ''
+    saveAuthState({
+      token: payload.token,
+      profile: {
+        id: payload.id,
+        name: payload.name,
+        phone: payload.phone,
+        avatar: payload.avatar || ''
+      }
     });
   };
 
   const logout = () => {
-    clearProfile();
+    clearAuthState();
   };
 
   return {
@@ -47,4 +77,3 @@ export const useAuthStore = () => {
     logout
   };
 };
-

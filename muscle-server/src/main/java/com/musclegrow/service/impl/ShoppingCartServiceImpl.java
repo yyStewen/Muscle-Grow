@@ -6,6 +6,7 @@ import com.musclegrow.dto.ShoppingCartDTO;
 import com.musclegrow.entity.Setmeal;
 import com.musclegrow.entity.ShoppingCart;
 import com.musclegrow.entity.Supplement;
+import com.musclegrow.exception.BaseException;
 import com.musclegrow.mapper.SetmealMapper;
 import com.musclegrow.mapper.ShoppingCartMapper;
 import com.musclegrow.mapper.SupplementMapper;
@@ -14,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -24,110 +26,165 @@ public class ShoppingCartServiceImpl implements ShoppingCartService {
 
     @Autowired
     private ShoppingCartMapper shoppingCartMapper;
+
     @Autowired
     private SupplementMapper supplementMapper;
+
     @Autowired
     private SetmealMapper setmealMapper;
 
-    /**
-     * 添加购物车
-     * @param shoppingCartDTO
-     */
+    @Override
     public void addShoppingCart(ShoppingCartDTO shoppingCartDTO) {
-        //判断当前加入到购物车中的商品是否已经存在了
-        ShoppingCart shoppingCart = new ShoppingCart();
-        BeanUtils.copyProperties(shoppingCartDTO,shoppingCart);
-        Long userId = BaseContext.getCurrentId();
-        shoppingCart.setUserId(userId);
-        List<ShoppingCart> list = getShoppingCartList(shoppingCart);
+        validateShoppingCartDTO(shoppingCartDTO);
 
-        //如果已经存在了，只需要将数量加一
-        if(list != null && list.size() > 0){
+        ShoppingCart shoppingCart = new ShoppingCart();
+        BeanUtils.copyProperties(shoppingCartDTO, shoppingCart);
+        shoppingCart.setUserId(getCurrentUserId());
+        shoppingCart.setSupplementDetail(normalizeSupplementDetail(shoppingCart.getSupplementDetail()));
+
+        List<ShoppingCart> list = getMatchedShoppingCartList(shoppingCart);
+        if (!list.isEmpty()) {
             ShoppingCart cart = list.get(0);
-            cart.setNumber(cart.getNumber() + 1);//update shopping_cart set number = ? where id = ?
+            cart.setNumber(cart.getNumber() + 1);
             shoppingCartMapper.updateById(cart);
-        }else {
-            //如果不存在，需要插入一条购物车数据
-            //判断本次添加到购物车的是补剂还是套餐
-            Long supplementId = shoppingCartDTO.getSupplementId();
-            if(supplementId != null){
-                //本次添加到购物车的是补剂
-                Supplement supplement = supplementMapper.selectById(supplementId);
-                shoppingCart.setName(supplement.getName());
-                shoppingCart.setImage(supplement.getImage());
-                shoppingCart.setAmount(supplement.getPrice());
-            }else{
-                //本次添加到购物车的是套餐
-                Long setmealId = shoppingCartDTO.getSetmealId();
-                Setmeal setmeal = setmealMapper.selectById(setmealId);
-                shoppingCart.setName(setmeal.getName());
-                shoppingCart.setImage(setmeal.getImage());
-                shoppingCart.setAmount(setmeal.getPrice());
-            }
-            shoppingCart.setNumber(1);
-            shoppingCart.setCreateTime(LocalDateTime.now());
-            shoppingCartMapper.insert(shoppingCart);
+            return;
         }
+
+        fillShoppingCartProductInfo(shoppingCartDTO, shoppingCart);
+        shoppingCart.setNumber(1);
+        shoppingCart.setCreateTime(LocalDateTime.now());
+        shoppingCartMapper.insert(shoppingCart);
     }
 
-    /**
-     * 查看购物车
-     * @return
-     */
+    @Override
     public List<ShoppingCart> showShoppingCart() {
-        //获取到当前微信用户的id
-        Long userId = BaseContext.getCurrentId();
+        Long userId = getCurrentUserId();
         ShoppingCart shoppingCart = ShoppingCart.builder()
                 .userId(userId)
                 .build();
-        List<ShoppingCart> list = getShoppingCartList(shoppingCart);
-        return list;
+        return getShoppingCartList(shoppingCart);
+    }
+
+    @Override
+    public void cleanShoppingCart() {
+        Long userId = getCurrentUserId();
+        shoppingCartMapper.delete(
+                new LambdaQueryWrapper<ShoppingCart>().eq(ShoppingCart::getUserId, userId)
+        );
+    }
+
+    @Override
+    public void subShoppingCart(ShoppingCartDTO shoppingCartDTO) {
+        validateShoppingCartDTO(shoppingCartDTO);
+
+        ShoppingCart shoppingCart = new ShoppingCart();
+        BeanUtils.copyProperties(shoppingCartDTO, shoppingCart);
+        shoppingCart.setUserId(getCurrentUserId());
+        shoppingCart.setSupplementDetail(normalizeSupplementDetail(shoppingCart.getSupplementDetail()));
+
+        List<ShoppingCart> list = getMatchedShoppingCartList(shoppingCart);
+        if (list.isEmpty()) {
+            return;
+        }
+
+        ShoppingCart currentCart = list.get(0);
+        if (currentCart.getNumber() == 1) {
+            shoppingCartMapper.deleteById(currentCart.getId());
+            return;
+        }
+
+        currentCart.setNumber(currentCart.getNumber() - 1);
+        shoppingCartMapper.updateById(currentCart);
+    }
+
+    private void fillShoppingCartProductInfo(ShoppingCartDTO shoppingCartDTO, ShoppingCart shoppingCart) {
+        if (shoppingCartDTO.getSupplementId() != null) {
+            Supplement supplement = supplementMapper.selectById(shoppingCartDTO.getSupplementId());
+            if (supplement == null) {
+                throw new BaseException("补剂不存在");
+            }
+
+            shoppingCart.setName(supplement.getName());
+            shoppingCart.setImage(supplement.getImage());
+            shoppingCart.setAmount(supplement.getPrice());
+            return;
+        }
+
+        Setmeal setmeal = setmealMapper.selectById(shoppingCartDTO.getSetmealId());
+        if (setmeal == null) {
+            throw new BaseException("套餐不存在");
+        }
+
+        shoppingCart.setName(setmeal.getName());
+        shoppingCart.setImage(setmeal.getImage());
+        shoppingCart.setAmount(setmeal.getPrice());
     }
 
     private List<ShoppingCart> getShoppingCartList(ShoppingCart shoppingCart) {
         LambdaQueryWrapper<ShoppingCart> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(shoppingCart.getUserId()!=null, ShoppingCart::getUserId, shoppingCart.getUserId());
-        queryWrapper.eq(shoppingCart.getSupplementId()!=null, ShoppingCart::getSupplementId, shoppingCart.getSupplementId());
-        queryWrapper.eq(shoppingCart.getSetmealId()!=null, ShoppingCart::getSetmealId, shoppingCart.getSetmealId());
-        queryWrapper.eq(shoppingCart.getDishFlavor()!=null, ShoppingCart::getDishFlavor, shoppingCart.getDishFlavor());
-
-        List<ShoppingCart> list = shoppingCartMapper.selectList(queryWrapper);
-        return list;
+        queryWrapper.eq(shoppingCart.getUserId() != null, ShoppingCart::getUserId, shoppingCart.getUserId());
+        queryWrapper.eq(shoppingCart.getSupplementId() != null, ShoppingCart::getSupplementId, shoppingCart.getSupplementId());
+        queryWrapper.eq(shoppingCart.getSetmealId() != null, ShoppingCart::getSetmealId, shoppingCart.getSetmealId());
+        queryWrapper.eq(
+                shoppingCart.getSupplementDetail() != null,
+                ShoppingCart::getSupplementDetail,
+                shoppingCart.getSupplementDetail()
+        );
+        return shoppingCartMapper.selectList(queryWrapper);
     }
 
-    /**
-     * 清空购物车
-     */
-    public void cleanShoppingCart() {
-        //获取到当前微信用户的id
-        Long userId = BaseContext.getCurrentId();
-        shoppingCartMapper.delete(new LambdaQueryWrapper<ShoppingCart>().eq(ShoppingCart::getUserId,userId));
-    }
+    private List<ShoppingCart> getMatchedShoppingCartList(ShoppingCart shoppingCart) {
+        LambdaQueryWrapper<ShoppingCart> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(ShoppingCart::getUserId, shoppingCart.getUserId());
+        queryWrapper.eq(
+                shoppingCart.getSupplementId() != null,
+                ShoppingCart::getSupplementId,
+                shoppingCart.getSupplementId()
+        );
+        queryWrapper.eq(
+                shoppingCart.getSetmealId() != null,
+                ShoppingCart::getSetmealId,
+                shoppingCart.getSetmealId()
+        );
 
-    /**
-     * 删除购物车中一个商品
-     * @param shoppingCartDTO
-     */
-    public void subShoppingCart(ShoppingCartDTO shoppingCartDTO) {
-        ShoppingCart shoppingCart = new ShoppingCart();
-        BeanUtils.copyProperties(shoppingCartDTO,shoppingCart);
-        //设置查询条件，查询当前登录用户的购物车数据
-        shoppingCart.setUserId(BaseContext.getCurrentId());
-
-        List<ShoppingCart> list = getShoppingCartList(shoppingCart);
-
-        if(list != null && list.size() > 0){
-            shoppingCart = list.get(0);
-
-            Integer number = shoppingCart.getNumber();
-            if(number == 1){
-                //当前商品在购物车中的份数为1，直接删除当前记录
-                shoppingCartMapper.deleteById(shoppingCart.getId());
-            }else {
-                //当前商品在购物车中的份数不为1，修改份数即可
-                shoppingCart.setNumber(shoppingCart.getNumber() - 1);
-                shoppingCartMapper.updateById(shoppingCart);
+        if (shoppingCart.getSupplementId() != null) {
+            if (shoppingCart.getSupplementDetail() == null) {
+                queryWrapper.isNull(ShoppingCart::getSupplementDetail);
+            } else {
+                queryWrapper.eq(ShoppingCart::getSupplementDetail, shoppingCart.getSupplementDetail());
             }
         }
+
+        if (shoppingCart.getSetmealId() != null) {
+            queryWrapper.isNull(ShoppingCart::getSupplementDetail);
+        }
+
+        return shoppingCartMapper.selectList(queryWrapper);
+    }
+
+    private void validateShoppingCartDTO(ShoppingCartDTO shoppingCartDTO) {
+        if (shoppingCartDTO == null) {
+            throw new BaseException("购物车商品参数错误");
+        }
+
+        boolean hasSupplement = shoppingCartDTO.getSupplementId() != null;
+        boolean hasSetmeal = shoppingCartDTO.getSetmealId() != null;
+        if (hasSupplement == hasSetmeal) {
+            throw new BaseException("购物车商品参数错误");
+        }
+
+        shoppingCartDTO.setSupplementDetail(normalizeSupplementDetail(shoppingCartDTO.getSupplementDetail()));
+    }
+
+    private String normalizeSupplementDetail(String supplementDetail) {
+        return StringUtils.hasText(supplementDetail) ? supplementDetail.trim() : null;
+    }
+
+    private Long getCurrentUserId() {
+        Long userId = BaseContext.getCurrentId();
+        if (userId == null) {
+            throw new BaseException("用户未登录");
+        }
+        return userId;
     }
 }

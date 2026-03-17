@@ -4,6 +4,7 @@ import LoginView from '@/views/login/index.vue';
 import UserLayout from '@/views/layout/index.vue';
 import HomeView from '@/views/home/index.vue';
 import CartView from '@/views/cart/index.vue';
+import AddressView from '@/views/address/index.vue';
 import { useAuthStore } from '@/stores/auth';
 
 const router = createRouter({
@@ -32,6 +33,11 @@ const router = createRouter({
           path: 'cart',
           name: 'cart',
           component: CartView
+        },
+        {
+          path: 'address',
+          name: 'address',
+          component: AddressView
         }
       ]
     }
@@ -58,4 +64,3 @@ router.beforeEach((to) => {
 });
 
 export default router;
-

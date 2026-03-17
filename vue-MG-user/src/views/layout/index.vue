@@ -2,6 +2,7 @@
 import { computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { logoutUser } from '@/api/auth';
 import UserHeader from '@/components/layout/UserHeader.vue';
 import UserSidebar from '@/components/layout/UserSidebar.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -65,13 +66,23 @@ const handleNavigate = ({ kind, id }) => {
   });
 };
 
-const handleLogout = () => {
+const handleLogout = async () => {
+  try {
+    await logoutUser();
+  } catch (error) {
+    // Ignore logout request failures and always clear local session.
+  }
+
   authStore.logout();
+  cartStore.reset();
   router.replace('/login');
 };
 
 onMounted(async () => {
-  await catalogStore.fetchCatalogCategories();
+  await Promise.allSettled([
+    catalogStore.fetchCatalogCategories(),
+    cartStore.fetchCart()
+  ]);
   ensureDefaultRoute();
 });
 
@@ -106,6 +117,7 @@ watch(
           :user-name="authStore.state.profile?.name"
           :cart-count="cartStore.totalCount.value"
           @go-cart="router.push('/user/cart')"
+          @go-address="router.push('/user/address')"
           @logout="handleLogout"
         />
 
@@ -171,4 +183,3 @@ watch(
   }
 }
 </style>
-

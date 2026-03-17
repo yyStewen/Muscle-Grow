@@ -42,17 +42,17 @@ const currentCategoryName = computed(() => {
       ? catalogStore.state.setmealCategories
       : catalogStore.state.supplementCategories;
 
-  return pool.find((item) => item.id === currentCategoryId.value)?.name || '精选好物';
+  return pool.find((item) => item.id === currentCategoryId.value)?.name || 'Featured Selection';
 });
 
 const heroTitle = computed(() =>
-  currentKind.value === 'setmeal' ? '套餐搭配专区' : '补剂精选货架'
+  currentKind.value === 'setmeal' ? 'Setmeal Combos' : 'Supplement Shelf'
 );
 
 const heroDescription = computed(() =>
   currentKind.value === 'setmeal'
-    ? '面向增肌、减脂、恢复等不同目标提供组合套餐，一键配齐训练所需。'
-    : '支持按分类浏览补剂，有规格信息时可先选择口味/容量/剂型，再加入购物车。'
+    ? 'Browse ready-made supplement bundles for different training goals and recovery plans.'
+    : 'Browse supplements by category and choose specifications before adding them to the cart.'
 );
 
 const fetchProducts = async () => {
@@ -76,7 +76,7 @@ const fetchProducts = async () => {
           : (res.data || []).map((item) => normalizeSupplement(item));
     } else {
       products.value = [];
-      ElMessage.error(res.msg || '商品加载失败');
+      ElMessage.error(res.msg || 'Failed to load products.');
     }
   } catch (error) {
     products.value = [];
@@ -87,26 +87,30 @@ const fetchProducts = async () => {
 
 watch([currentKind, currentCategoryId], fetchProducts, { immediate: true });
 
-const addSupplementDirect = (product) => {
-  cartStore.addSupplement(product);
-  ElMessage.success('已加入购物车');
+const addSupplementDirect = async (product) => {
+  const success = await cartStore.addSupplement(product);
+  if (success) {
+    ElMessage.success('Added to cart');
+  }
 };
 
-const handleSupplementAction = (product) => {
+const handleSupplementAction = async (product) => {
   if (product.hasSpecs) {
     activeSupplement.value = product;
     specDialogVisible.value = true;
     return;
   }
 
-  addSupplementDirect(product);
+  await addSupplementDirect(product);
 };
 
-const handleSpecConfirm = (selection) => {
+const handleSpecConfirm = async (selection) => {
   if (!activeSupplement.value) return;
 
-  cartStore.addSupplement(activeSupplement.value, selection);
-  ElMessage.success('已按所选规格加入购物车');
+  const success = await cartStore.addSupplement(activeSupplement.value, selection);
+  if (success) {
+    ElMessage.success('Added to cart');
+  }
 };
 
 const openSetmealDrawer = async (setmeal) => {
@@ -122,9 +126,11 @@ const openSetmealDrawer = async (setmeal) => {
   }
 };
 
-const addSetmealToCart = (setmeal) => {
-  cartStore.addSetmeal(setmeal);
-  ElMessage.success('套餐已加入购物车');
+const addSetmealToCart = async (setmeal) => {
+  const success = await cartStore.addSetmeal(setmeal);
+  if (success) {
+    ElMessage.success('Added to cart');
+  }
 };
 
 const handleCheckout = () => {
@@ -141,28 +147,31 @@ const handleCheckout = () => {
         <p class="shop-hero__desc">{{ heroDescription }}</p>
 
         <div class="shop-hero__meta">
-          <span>当前分类 {{ currentCategoryName }}</span>
-          <span>{{ products.length }} 件可选商品</span>
-          <span>支持补剂规格选择 / 套餐补剂预览</span>
+          <span>Current category {{ currentCategoryName }}</span>
+          <span>{{ products.length }} items available</span>
+          <span>Supports supplement specs and setmeal detail preview</span>
         </div>
       </div>
 
       <div class="shop-hero__card">
-        <p>营养补给站</p>
-        <strong>训练日前后 30 分钟补给效率最高</strong>
-        <span>根据你的训练节奏，把补剂、套餐和购物车选择整合到一套桌面端流程里。</span>
+        <p>Fuel Timing</p>
+        <strong>Build a cleaner desktop shopping flow for training nutrition</strong>
+        <span>
+          Categories, specification selection, setmeal preview, and the cart summary are all connected
+          in one place for the next order step.
+        </span>
       </div>
     </section>
 
     <section class="product-board" v-loading="loading">
       <div class="product-board__header">
         <div>
-          <p>{{ currentKind === 'setmeal' ? '套餐列表' : '补剂列表' }}</p>
+          <p>{{ currentKind === 'setmeal' ? 'SETMEAL LIST' : 'SUPPLEMENT LIST' }}</p>
           <h3>{{ currentCategoryName }}</h3>
         </div>
 
         <el-button class="product-board__cart-link" @click="router.push('/user/cart')">
-          查看购物车
+          View Cart
         </el-button>
       </div>
 
@@ -178,15 +187,15 @@ const handleCheckout = () => {
             <div class="product-item__title-row">
               <h4>{{ item.name }}</h4>
               <span v-if="currentKind === 'supplement' && item.hasSpecs" class="product-item__tag">
-                多规格可选
+                Multi Spec
               </span>
               <span v-if="currentKind === 'setmeal'" class="product-item__tag product-item__tag--setmeal">
-                组合搭配
+                Bundle
               </span>
             </div>
 
             <p class="product-item__desc">
-              {{ item.description || (currentKind === 'setmeal' ? '组合补给，适合一键选购。' : '专业训练补给方案。') }}
+              {{ item.description || (currentKind === 'setmeal' ? 'Prebuilt supplement bundle.' : 'Training nutrition support.') }}
             </p>
 
             <div
@@ -194,17 +203,17 @@ const handleCheckout = () => {
               class="product-item__chips"
             >
               <span v-for="detail in item.detailGroups.slice(0, 2)" :key="detail.id || detail.name">
-                {{ detail.name }} · {{ detail.values.slice(0, 2).join(' / ') }}
+                {{ detail.name }} / {{ detail.values.slice(0, 2).join(' / ') }}
               </span>
             </div>
 
             <div v-if="currentKind === 'setmeal'" class="product-item__inline-actions">
-              <el-button link type="warning" @click="openSetmealDrawer(item)">查看套餐内容</el-button>
+              <el-button link type="warning" @click="openSetmealDrawer(item)">View Contents</el-button>
             </div>
 
             <div class="product-item__price-row">
               <strong>¥{{ formatCurrency(item.price) }}</strong>
-              <span>{{ currentKind === 'setmeal' ? '推荐目标型组合' : '支持快速补货' }}</span>
+              <span>{{ currentKind === 'setmeal' ? 'Goal-based bundle' : 'Fast add supported' }}</span>
             </div>
           </div>
 
@@ -215,7 +224,7 @@ const handleCheckout = () => {
               type="warning"
               @click="handleSupplementAction(item)"
             >
-              选择规格
+              Choose Spec
             </el-button>
 
             <el-button
@@ -230,7 +239,7 @@ const handleCheckout = () => {
 
             <div v-else class="product-item__setmeal-actions">
               <el-button round plain type="warning" @click="openSetmealDrawer(item)">
-                套餐详情
+                Details
               </el-button>
               <el-button circle type="warning" class="product-item__circle" @click="addSetmealToCart(item)">
                 <el-icon><Plus /></el-icon>
@@ -240,7 +249,7 @@ const handleCheckout = () => {
         </article>
       </div>
 
-      <el-empty v-else description="该分类下暂时还没有上架商品" />
+      <el-empty v-else description="No products available in this category." />
     </section>
 
     <CartDock

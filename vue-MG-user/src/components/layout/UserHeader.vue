@@ -10,33 +10,38 @@ defineProps({
   }
 });
 
-defineEmits(['go-cart', 'logout']);
+defineEmits(['go-cart', 'go-address', 'logout']);
 </script>
 
 <template>
   <header class="user-header">
     <div class="user-header__headline">
       <p class="user-header__eyebrow">Muscle Grow Fuel Lab</p>
-      <h1>训练补给已就位，今天也保持高效进食。</h1>
+      <h1>Your nutrition flow is ready for training day.</h1>
     </div>
 
     <div class="user-header__actions">
       <div class="user-header__user">
         <div class="user-header__avatar">{{ userName.slice(0, 1) || 'U' }}</div>
         <div>
-          <p class="user-header__label">当前用户</p>
-          <strong>{{ userName || '健身伙伴' }}</strong>
+          <p class="user-header__label">Current User</p>
+          <strong>{{ userName || 'Gym Partner' }}</strong>
         </div>
       </div>
 
       <el-badge :value="cartCount" :hidden="!cartCount" class="user-header__cart-badge">
         <el-button class="user-header__cart-btn" @click="$emit('go-cart')">
           <el-icon><ShoppingCart /></el-icon>
-          购物车
+          Cart
         </el-button>
       </el-badge>
 
-      <el-button class="user-header__logout" @click="$emit('logout')">退出登录</el-button>
+      <el-button class="user-header__address" @click="$emit('go-address')">
+        <el-icon><Location /></el-icon>
+        Address Book
+      </el-button>
+
+      <el-button class="user-header__logout" @click="$emit('logout')">Logout</el-button>
     </div>
   </header>
 </template>
@@ -114,6 +119,7 @@ defineEmits(['go-cart', 'logout']);
 }
 
 .user-header__cart-btn,
+.user-header__address,
 .user-header__logout {
   height: 48px;
   padding: 0 20px;
@@ -125,6 +131,11 @@ defineEmits(['go-cart', 'logout']);
   background: #ffd256;
   color: #3f250f;
   font-weight: 700;
+}
+
+.user-header__address {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff7eb;
 }
 
 .user-header__logout {
@@ -144,4 +155,3 @@ defineEmits(['go-cart', 'logout']);
   }
 }
 </style>
-

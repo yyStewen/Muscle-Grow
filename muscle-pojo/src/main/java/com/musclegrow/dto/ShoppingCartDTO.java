@@ -8,6 +8,6 @@ public class ShoppingCartDTO implements Serializable {
 
     private Long supplementId;
     private Long setmealId;
-    private String dishFlavor;
+    private String supplementDetail;
 
 }

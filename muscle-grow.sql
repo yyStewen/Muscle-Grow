@@ -274,7 +274,7 @@ CREATE TABLE `shopping_cart` (
   `user_id` bigint NOT NULL COMMENT '主键',
   `supplement_id` bigint DEFAULT NULL COMMENT '补剂id',
   `setmeal_id` bigint DEFAULT NULL COMMENT '套餐id',
-  `dish_flavor` varchar(50) COLLATE utf8mb3_bin DEFAULT NULL COMMENT '口味',
+  `supplement_detail` varchar(50) COLLATE utf8mb3_bin DEFAULT NULL COMMENT '补剂详细信息，规格',
   `number` int NOT NULL DEFAULT '1' COMMENT '数量',
   `amount` decimal(10,2) NOT NULL COMMENT '金额',
   `create_time` datetime DEFAULT NULL COMMENT '创建时间',

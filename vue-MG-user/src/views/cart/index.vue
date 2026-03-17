@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
@@ -10,6 +10,10 @@ const router = useRouter();
 const cartStore = useCartStore();
 
 const selectedKeys = ref([]);
+
+onMounted(async () => {
+  await cartStore.fetchCart();
+});
 
 watch(
   () => cartStore.state.items,
@@ -58,22 +62,40 @@ const toggleSelected = (key, checked) => {
 
 const handleCheckout = () => {
   if (!selectedItems.value.length) {
-    ElMessage.warning('请先勾选要结算的商品');
+    ElMessage.warning('Please select items before checkout.');
     return;
   }
 
-  ElMessage.success('购物车结算流程已预留，后续接入下单接口即可继续开发');
+  ElMessage.success('Checkout flow is reserved for the next step.');
 };
 
 const handleClear = () => {
-  ElMessageBox.confirm('确认清空购物车吗？', '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
+  ElMessageBox.confirm('Clear all items from the cart?', 'Confirm', {
+    confirmButtonText: 'Clear',
+    cancelButtonText: 'Cancel',
     type: 'warning'
-  }).then(() => {
-    cartStore.clear();
-    selectedKeys.value = [];
+  }).then(async () => {
+    const success = await cartStore.clear();
+    if (success) {
+      selectedKeys.value = [];
+      ElMessage.success('Cart cleared');
+    }
   }).catch(() => {});
+};
+
+const handleIncrease = async (item) => {
+  await cartStore.increase(item);
+};
+
+const handleDecrease = async (item) => {
+  await cartStore.decrease(item);
+};
+
+const handleRemove = async (item) => {
+  const success = await cartStore.remove(item);
+  if (success) {
+    ElMessage.success('Item removed');
+  }
 };
 </script>
 
@@ -82,23 +104,28 @@ const handleClear = () => {
     <section class="cart-page__hero">
       <div>
         <p class="cart-page__eyebrow">Shopping Cart</p>
-        <h2>购物车</h2>
-        <span>已为后续“确认订单 / 支付 / 下单”流程预留前端结构。</span>
+        <h2>Cart</h2>
+        <span>The cart is now backed by the real backend list and clear APIs.</span>
       </div>
 
       <div class="cart-page__hero-actions">
-        <el-button @click="router.push('/user/home')">继续选购</el-button>
-        <el-button type="danger" plain :disabled="!cartStore.state.items.length" @click="handleClear">
-          清空购物车
+        <el-button @click="router.push('/user/home')">Continue Shopping</el-button>
+        <el-button
+          type="danger"
+          plain
+          :disabled="!cartStore.state.items.length || cartStore.state.syncing"
+          @click="handleClear"
+        >
+          Clear Cart
         </el-button>
       </div>
     </section>
 
-    <div v-if="cartStore.state.items.length" class="cart-page__grid">
+    <div v-if="cartStore.state.items.length" class="cart-page__grid" v-loading="cartStore.state.loading">
       <section class="cart-list">
         <div class="cart-list__toolbar">
-          <el-checkbox v-model="allSelected">全选</el-checkbox>
-          <span>共 {{ cartStore.state.items.length }} 条购物记录</span>
+          <el-checkbox v-model="allSelected">Select All</el-checkbox>
+          <span>{{ cartStore.state.items.length }} cart rows</span>
         </div>
 
         <article v-for="item in cartStore.state.items" :key="item.key" class="cart-item">
@@ -112,55 +139,57 @@ const handleClear = () => {
           <div class="cart-item__body">
             <div class="cart-item__title-row">
               <h3>{{ item.name }}</h3>
-              <span>{{ item.type === 'setmeal' ? '套餐' : '补剂' }}</span>
+              <span>{{ item.type === 'setmeal' ? 'Setmeal' : 'Supplement' }}</span>
             </div>
-            <p>{{ item.description || '已加入购物车，等待结算。' }}</p>
+            <p>{{ item.type === 'setmeal' ? 'Setmeal item in cart.' : 'Supplement item in cart.' }}</p>
             <small v-if="item.specText">{{ item.specText }}</small>
           </div>
 
           <div class="cart-item__price">
             <strong>¥{{ formatCurrency(item.price) }}</strong>
-            <span>小计 ¥{{ formatCurrency(item.price * item.quantity) }}</span>
+            <span>Subtotal ¥{{ formatCurrency(item.price * item.quantity) }}</span>
           </div>
 
           <div class="cart-item__stepper">
-            <el-button circle plain @click="cartStore.decrease(item.key)">-</el-button>
+            <el-button circle plain :disabled="cartStore.state.syncing" @click="handleDecrease(item)">-</el-button>
             <span>{{ item.quantity }}</span>
-            <el-button circle plain @click="cartStore.increase(item.key)">+</el-button>
+            <el-button circle plain :disabled="cartStore.state.syncing" @click="handleIncrease(item)">+</el-button>
           </div>
 
-          <el-button link type="danger" @click="cartStore.remove(item.key)">删除</el-button>
+          <el-button link type="danger" :disabled="cartStore.state.syncing" @click="handleRemove(item)">
+            Remove
+          </el-button>
         </article>
       </section>
 
       <aside class="cart-summary">
         <p class="cart-summary__eyebrow">Order Preview</p>
-        <h3>结算清单</h3>
+        <h3>Summary</h3>
 
         <div class="cart-summary__row">
-          <span>已选商品数</span>
+          <span>Selected quantity</span>
           <strong>{{ selectedCount }}</strong>
         </div>
 
         <div class="cart-summary__row">
-          <span>购物车总数</span>
+          <span>Total quantity</span>
           <strong>{{ cartStore.totalCount.value }}</strong>
         </div>
 
         <div class="cart-summary__row cart-summary__row--amount">
-          <span>待结算金额</span>
+          <span>Selected amount</span>
           <strong>¥{{ formatCurrency(selectedAmount) }}</strong>
         </div>
 
         <el-button class="cart-summary__submit" type="warning" @click="handleCheckout">
-          选择结算下单
+          Checkout
         </el-button>
       </aside>
     </div>
 
-    <section v-else class="cart-empty">
-      <el-empty description="购物车还是空的，去首页挑几件补剂吧" />
-      <el-button type="warning" @click="router.push('/user/home')">去首页看看</el-button>
+    <section v-else class="cart-empty" v-loading="cartStore.state.loading">
+      <el-empty description="Your cart is empty." />
+      <el-button type="warning" @click="router.push('/user/home')">Go Shopping</el-button>
     </section>
   </div>
 </template>
