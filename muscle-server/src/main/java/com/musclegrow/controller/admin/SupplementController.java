@@ -10,9 +10,11 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * 菜品管理
@@ -37,6 +39,10 @@ public class SupplementController {
     public Result save(@RequestBody SupplementDTO supplementDTO) {
         log.info("新增补剂：{}", supplementDTO);
         supplementService.saveWithSupplementDetail(supplementDTO);// 后绪步骤开发
+
+        //清理缓存数据
+        String key = "supplement_" + supplementDTO.getCategoryId();
+        cleanCache(key);
         return Result.success();
     }
 
@@ -65,6 +71,8 @@ public class SupplementController {
     public Result delete(@RequestParam List<Long> ids) {
         log.info("菜品批量删除：{}", ids);
         supplementService.deleteBatch(ids);//后绪步骤实现
+
+        cleanCache("supplement_*");//删除所有缓存数据
         return Result.success();
     }
 
@@ -94,6 +102,9 @@ public class SupplementController {
     public Result update(@RequestBody SupplementDTO supplementDTO) {
         log.info("修改菜品：{}", supplementDTO);
         supplementService.updateWithDetail(supplementDTO);
+
+        //清理缓存数据
+        cleanCache("supplement_*");//删除所有缓存数据
         return Result.success();
     }
 
@@ -107,6 +118,20 @@ public class SupplementController {
     @ApiOperation("补剂起售停售")
     public Result<String> startOrStop(@PathVariable Integer status, Long id){
         supplementService.startOrStop(status,id);
+
+        //将所有的补剂缓存数据清理掉，所有以supplement_开头的key
+        cleanCache("supplement_*");
         return Result.success();
+    }
+
+    @Autowired
+    private RedisTemplate redisTemplate;
+    /**
+     * 清理缓存数据
+     * @param pattern
+     */
+    private void cleanCache(String pattern){
+        Set keys = redisTemplate.keys(pattern);
+        redisTemplate.delete(keys);
     }
 }

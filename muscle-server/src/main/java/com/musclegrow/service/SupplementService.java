@@ -24,4 +24,7 @@ public interface SupplementService extends IService<Supplement> {
     void updateWithDetail(SupplementDTO supplementDTO);
 
     void startOrStop(Integer status, Long id);
+
+
+    List<SupplementVO> listWithDetail(Supplement supplement);
 }

@@ -17,6 +17,7 @@ import com.musclegrow.mapper.SupplementMapper;
 import com.musclegrow.result.PageResult;
 import com.musclegrow.service.SetmealService;
 import com.musclegrow.vo.SetmealVO;
+import com.musclegrow.vo.SupplementItemVO;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -51,7 +52,7 @@ public class SetmealServiceImpl implements SetmealService {
     }
 
     @Override
-    public List<Supplement> list(Long categoryId) {
+    public List<Supplement> listByCategoryId(Long categoryId) {
         Supplement supplement = Supplement.builder()
                 .categoryId(categoryId)
                 .status(StatusConstant.ENABLE)
@@ -177,6 +178,26 @@ public class SetmealServiceImpl implements SetmealService {
                 .status(status)
                 .build();
         setmealMapper.updateById(setmeal);
+    }
+
+    @Override
+    public List<Setmeal> list(Setmeal setmeal) {
+        LambdaQueryWrapper<Setmeal> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.like(setmeal.getName() != null, Setmeal::getName, setmeal.getName());
+        queryWrapper.eq(setmeal.getStatus() != null, Setmeal::getStatus, setmeal.getStatus());
+        queryWrapper.eq(setmeal.getCategoryId() != null, Setmeal::getCategoryId, setmeal.getCategoryId());
+        List<Setmeal> list = setmealMapper.selectList(queryWrapper);
+        return list;
+    }
+
+    /**
+     * 根据套餐id查询包含的补剂
+     * @param id
+     * @return
+     */
+    @Override
+    public List<SupplementItemVO> getSupplementItemBySetmealId(Long id) {
+        return setmealSupplementMapper.getSupplementItemBySetmealId(id);
     }
 
 

@@ -12,7 +12,7 @@ const request = axios.create({
 // axios的请求 request 拦截器
 request.interceptors.request.use(
   (config) => {
-    let loginUser = JSON.parse(localStorage.getItem('loginUser'));
+    let loginUser = JSON.parse(localStorage.getItem('loginUser-Admin'));
 
     // 如果用户已登录
     if (loginUser && loginUser.token) {
@@ -44,7 +44,7 @@ request.interceptors.response.use(
   (error) => { //失败回调
     //如果响应的状态码为401, 则路由到登录页面
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem('loginUser');
+      localStorage.removeItem('loginUser-Admin');
       ElMessage.error('登录失效, 请重新登录');
       router.push('/login');
     } else {

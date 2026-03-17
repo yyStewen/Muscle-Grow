@@ -2,6 +2,7 @@ package com.musclegrow.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.musclegrow.entity.SetmealSupplement;
+import com.musclegrow.vo.SupplementItemVO;
 import org.apache.ibatis.annotations.Mapper;
 
 import java.util.List;
@@ -21,4 +22,11 @@ public interface SetmealSupplementMapper extends BaseMapper<SetmealSupplement> {
      */
 
     void insertBatch(List<SetmealSupplement> setmealSupplements);
+
+    /**
+     * 根据套餐id查询菜品选项
+     * @param setmealId
+     * @return
+     */
+    List<SupplementItemVO> getSupplementItemBySetmealId(Long setmealId);
 }

@@ -13,3 +13,9 @@ muscle-grow:
     database: muscle_grow
     username: root
     password: 20041009
+
+  redis:
+    host: localhost
+    port: 6379
+    password:
+    database: 11

@@ -13,7 +13,7 @@
       const result = await login(loginForm.value)
       if (result.code) {// 登录成功
         ElMessage.success('登录成功')
-        localStorage.setItem('loginUser', JSON.stringify(result.data))
+        localStorage.setItem('loginUser-Admin', JSON.stringify(result.data))
         router.push('/')// 跳转
       }else {
         ElMessage.error(result.msg)

@@ -1,0 +1,22 @@
+{
+  "name": "vue-mg-user",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4174"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "axios": "^1.7.2",
+    "element-plus": "^2.4.4",
+    "vue": "^3.2.38",
+    "vue-router": "^4.1.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^3.0.3",
+    "vite": "^3.0.9"
+  }
+}
+

@@ -17,4 +17,9 @@
             #{id}
         </foreach>
     </select>
+    <select id="getSupplementItemBySetmealId" resultType="com.musclegrow.vo.SupplementItemVO">
+        select ss.name, ss.copies, s.image, s.description
+            from setmeal_supplement ss left join supplement s on ss.supplement_id = s.id
+            where ss.setmeal_id = #{setmealId}
+    </select>
 </mapper>

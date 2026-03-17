@@ -12,6 +12,11 @@ spring:
       url: jdbc:mysql://${muscle-grow.datasource.host}:${muscle-grow.datasource.port}/${muscle-grow.datasource.database}?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&zeroDateTimeBehavior=convertToNull&useSSL=false&allowPublicKeyRetrieval=true
       username: ${muscle-grow.datasource.username}
       password: ${muscle-grow.datasource.password}
+  redis:
+    host: ${musclegrow.redis.host}
+    port: ${musclegrow.redis.port}
+    password: ${musclegrow.redis.password}
+    database: ${musclegrow.redis.database}
 
 mybatis-plus:
   #mapper配置文件

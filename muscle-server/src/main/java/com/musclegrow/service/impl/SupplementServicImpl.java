@@ -208,4 +208,31 @@ public class SupplementServicImpl extends ServiceImpl<SupplementMapper, Suppleme
 
 
     }
+
+
+    /**
+     * 条件查询补剂和细节，规格信息
+     * @param supplement
+     * @return
+     */
+    @Override
+    public List<SupplementVO> listWithDetail(Supplement supplement) {
+        List<Supplement>supplementList=supplementMapper.list(supplement);
+
+        List<SupplementVO>supplementVOList=new ArrayList<>();
+
+        for(Supplement s:supplementList){
+            SupplementVO supplementVO=new SupplementVO();
+            BeanUtils.copyProperties(s,supplementVO);
+
+            //根据补剂id查询对应细节
+            List<SupplementDetail>details=supplementDetailService.list(
+                    new LambdaQueryWrapper<SupplementDetail>().eq(SupplementDetail::getSupplementId, s.getId()));
+
+            supplementVO.setDetails(details);
+            supplementVOList.add(supplementVO);
+
+        }
+        return supplementVOList;
+    }
 }
