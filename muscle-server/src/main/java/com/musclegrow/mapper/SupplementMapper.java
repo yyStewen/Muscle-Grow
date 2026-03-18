@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
+import java.util.Map;
 
 @Mapper
 public interface SupplementMapper extends BaseMapper<Supplement> {
@@ -24,4 +25,6 @@ public interface SupplementMapper extends BaseMapper<Supplement> {
     List<Supplement> list(Supplement supplement);
 
     List<Supplement> getBySetmealId(Long id);
+
+    Integer countByMap(Map map);
 }

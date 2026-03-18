@@ -9,9 +9,13 @@ import com.musclegrow.vo.SetmealVO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.Map;
+
 @Mapper
 public interface SetmealMapper extends BaseMapper<Setmeal> {
     Page<SetmealVO> pageQuery(@Param("page") Page<SetmealVO> page, @Param("setmealPageQueryDTO")SetmealPageQueryDTO setmealPageQueryDTO);
+
+    Integer countByMap(Map map);
 
     /**
      * 根据分类id查询套餐的数量

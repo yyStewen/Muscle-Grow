@@ -14,4 +14,6 @@ public interface OrderMapper extends BaseMapper<Orders> {
     Double sumByMap(Map map);
 
     List<GoodsSalesDTO> getSalesTop10(LocalDateTime beginTime, LocalDateTime endTime);
+
+    Integer countByMap(Map map);
 }
