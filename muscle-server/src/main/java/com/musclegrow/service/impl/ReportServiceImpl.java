@@ -216,8 +216,8 @@ public class ReportServiceImpl implements ReportService {
      * @param response
      **/
     public void exportBusinessData(HttpServletResponse response) {
-        LocalDate begin = LocalDate.now().minusDays(30);
-        LocalDate end = LocalDate.now().minusDays(1);
+        LocalDate end = LocalDate.now();
+        LocalDate begin = end.minusDays(29);
         //查询概览运营数据，提供给Excel模板文件
         BusinessDataVO businessData = workspaceService.getBusinessData(LocalDateTime.of(begin,LocalTime.MIN), LocalDateTime.of(end, LocalTime.MAX));
         InputStream inputStream = this.getClass().getClassLoader().getResourceAsStream("template/运营数据报表模板.xlsx");
