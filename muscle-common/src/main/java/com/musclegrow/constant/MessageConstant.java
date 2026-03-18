@@ -23,5 +23,9 @@ public class MessageConstant {
     public static final String SUPPLEMENT_BE_RELATED_BY_SETMEAL = "当前补剂关联了套餐,不能删除";
     public static final String ORDER_STATUS_ERROR = "订单状态错误";
     public static final String ORDER_NOT_FOUND = "订单不存在";
+    public static final String ORDER_ALREADY_PAID = "该订单已支付";
+    public static final String ORDER_CANCEL_REQUIRES_CONTACT = "订单商家已接单或正在派送中，请电话联系商家处理";
+    public static final String ORDER_REJECTION_REASON_IS_NULL = "拒单原因不能为空";
+    public static final String ORDER_CANCEL_REASON_IS_NULL = "取消原因不能为空";
 
 }

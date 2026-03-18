@@ -10,7 +10,7 @@ defineProps({
   }
 });
 
-defineEmits(['go-cart', 'go-address', 'logout']);
+defineEmits(['go-cart', 'go-address', 'go-orders', 'logout']);
 </script>
 
 <template>
@@ -39,6 +39,11 @@ defineEmits(['go-cart', 'go-address', 'logout']);
       <el-button class="user-header__address" @click="$emit('go-address')">
         <el-icon><Location /></el-icon>
         Address Book
+      </el-button>
+
+      <el-button class="user-header__orders" @click="$emit('go-orders')">
+        <el-icon><Tickets /></el-icon>
+        Orders
       </el-button>
 
       <el-button class="user-header__logout" @click="$emit('logout')">Logout</el-button>
@@ -120,6 +125,7 @@ defineEmits(['go-cart', 'go-address', 'logout']);
 
 .user-header__cart-btn,
 .user-header__address,
+.user-header__orders,
 .user-header__logout {
   height: 48px;
   padding: 0 20px;
@@ -135,6 +141,11 @@ defineEmits(['go-cart', 'go-address', 'logout']);
 
 .user-header__address {
   background: rgba(255, 255, 255, 0.16);
+  color: #fff7eb;
+}
+
+.user-header__orders {
+  background: rgba(255, 240, 215, 0.22);
   color: #fff7eb;
 }
 

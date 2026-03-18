@@ -5,6 +5,9 @@ import UserLayout from '@/views/layout/index.vue';
 import HomeView from '@/views/home/index.vue';
 import CartView from '@/views/cart/index.vue';
 import AddressView from '@/views/address/index.vue';
+import OrderCheckoutView from '@/views/order/checkout.vue';
+import OrderListView from '@/views/order/index.vue';
+import OrderDetailView from '@/views/order/detail.vue';
 import { useAuthStore } from '@/stores/auth';
 
 const router = createRouter({
@@ -38,6 +41,21 @@ const router = createRouter({
           path: 'address',
           name: 'address',
           component: AddressView
+        },
+        {
+          path: 'orders',
+          name: 'userOrders',
+          component: OrderListView
+        },
+        {
+          path: 'orders/checkout',
+          name: 'userOrderCheckout',
+          component: OrderCheckoutView
+        },
+        {
+          path: 'orders/:id',
+          name: 'userOrderDetail',
+          component: OrderDetailView
         }
       ]
     }

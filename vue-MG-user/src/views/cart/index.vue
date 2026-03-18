@@ -66,7 +66,12 @@ const handleCheckout = () => {
     return;
   }
 
-  ElMessage.success('Checkout flow is reserved for the next step.');
+  if (selectedItems.value.length !== cartStore.state.items.length) {
+    ElMessage.warning('Current checkout submits the full cart. Please keep all items selected.');
+    return;
+  }
+
+  router.push('/user/orders/checkout');
 };
 
 const handleClear = () => {

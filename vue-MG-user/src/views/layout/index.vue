@@ -118,6 +118,7 @@ watch(
           :cart-count="cartStore.totalCount.value"
           @go-cart="router.push('/user/cart')"
           @go-address="router.push('/user/address')"
+          @go-orders="router.push('/user/orders')"
           @logout="handleLogout"
         />
 
