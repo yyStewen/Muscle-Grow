@@ -1,11 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { ElMessage } from 'element-plus';
 
 import ChartPanel from '@/components/report/ChartPanel.vue';
-import { getOrdersStatistics } from '@/api/report';
+import { downloadBusinessReport, getOrdersStatistics } from '@/api/report';
 import { buildDateShortcuts, getRecentDaysRange, parseCsvList, toNumber } from '@/utils/report';
 
 const loading = ref(false);
+const exportLoading = ref(false);
 const dateRange = ref(getRecentDaysRange(7));
 const shortcuts = buildDateShortcuts();
 const dates = ref([]);
@@ -92,6 +94,16 @@ const fetchReport = async () => {
   }
 };
 
+const handleExport = async () => {
+  exportLoading.value = true;
+  try {
+    await downloadBusinessReport();
+    ElMessage.success('运营报表已开始下载');
+  } finally {
+    exportLoading.value = false;
+  }
+};
+
 onMounted(fetchReport);
 </script>
 
@@ -116,6 +128,9 @@ onMounted(fetchReport);
           :shortcuts="shortcuts"
         />
         <el-button type="primary" @click="fetchReport">查询</el-button>
+        <el-button type="success" plain :loading="exportLoading" @click="handleExport">
+          导出近30日运营报表
+        </el-button>
       </div>
     </section>
 

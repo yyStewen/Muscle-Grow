@@ -1,11 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { ElMessage } from 'element-plus';
 
 import ChartPanel from '@/components/report/ChartPanel.vue';
-import { getTurnoverStatistics } from '@/api/report';
+import { downloadBusinessReport, getTurnoverStatistics } from '@/api/report';
 import { buildDateShortcuts, getRecentDaysRange, parseCsvList, toNumber } from '@/utils/report';
 
 const loading = ref(false);
+const exportLoading = ref(false);
 const dateRange = ref(getRecentDaysRange(7));
 const shortcuts = buildDateShortcuts();
 const dates = ref([]);
@@ -20,6 +22,8 @@ const averageTurnover = computed(() =>
 const maxTurnover = computed(() =>
   turnoverList.value.length ? Math.max(...turnoverList.value) : 0
 );
+
+const formatCurrency = (value) => `\u00A5${Number(value || 0).toFixed(2)}`;
 
 const chartOption = computed(() => ({
   color: ['#ff7a45'],
@@ -92,6 +96,16 @@ const fetchReport = async () => {
   }
 };
 
+const handleExport = async () => {
+  exportLoading.value = true;
+  try {
+    await downloadBusinessReport();
+    ElMessage.success('运营报表已开始下载');
+  } finally {
+    exportLoading.value = false;
+  }
+};
+
 onMounted(fetchReport);
 </script>
 
@@ -101,7 +115,7 @@ onMounted(fetchReport);
       <div>
         <p class="report-page__eyebrow">Turnover Report</p>
         <h2>营业额统计</h2>
-        <span>查看时间范围内的每日营业额走势，快速判断店铺收入波动。</span>
+        <span>查看时间范围内的每日营业额走势，快速判断店铺收入变化。</span>
       </div>
 
       <div class="report-page__toolbar">
@@ -116,21 +130,24 @@ onMounted(fetchReport);
           :shortcuts="shortcuts"
         />
         <el-button type="primary" @click="fetchReport">查询</el-button>
+        <el-button type="success" plain :loading="exportLoading" @click="handleExport">
+          导出近30日运营报表
+        </el-button>
       </div>
     </section>
 
     <section class="report-page__stats">
       <article class="stat-card">
         <span>累计营业额</span>
-        <strong>￥{{ totalTurnover.toFixed(2) }}</strong>
+        <strong>{{ formatCurrency(totalTurnover) }}</strong>
       </article>
       <article class="stat-card">
         <span>日均营业额</span>
-        <strong>￥{{ averageTurnover.toFixed(2) }}</strong>
+        <strong>{{ formatCurrency(averageTurnover) }}</strong>
       </article>
       <article class="stat-card">
         <span>最高单日营业额</span>
-        <strong>￥{{ maxTurnover.toFixed(2) }}</strong>
+        <strong>{{ formatCurrency(maxTurnover) }}</strong>
       </article>
     </section>
 
