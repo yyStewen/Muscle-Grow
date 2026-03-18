@@ -1,7 +1,9 @@
 package com.musclegrow.controller.user;
 
 import com.musclegrow.constant.JwtClaimsConstant;
+import com.musclegrow.context.BaseContext;
 import com.musclegrow.dto.UserLoginDTO;
+import com.musclegrow.dto.UserPasswordUpdateDTO;
 import com.musclegrow.dto.UserRegisterDTO;
 import com.musclegrow.entity.User;
 import com.musclegrow.properties.JwtProperties;
@@ -13,6 +15,7 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -71,6 +74,14 @@ public class UserController {
     @PostMapping("/logout")
     @ApiOperation("User logout")
     public Result<String> logout() {
+        return Result.success();
+    }
+
+    @PutMapping("/password")
+    @ApiOperation("User update password")
+    public Result<String> updatePassword(@RequestBody UserPasswordUpdateDTO userPasswordUpdateDTO) {
+        log.info("user update password, userId={}", BaseContext.getCurrentId());
+        userService.updatePassword(userPasswordUpdateDTO);
         return Result.success();
     }
 }

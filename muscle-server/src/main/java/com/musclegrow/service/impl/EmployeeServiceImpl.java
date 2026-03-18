@@ -2,7 +2,9 @@ package com.musclegrow.service.impl;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.musclegrow.constant.PasswordConstant;
+import com.musclegrow.context.BaseContext;
 import com.musclegrow.dto.EmployeeDTO;
+import com.musclegrow.dto.EmployeePasswordUpdateDTO;
 import org.springframework.beans.BeanUtils;
 import org.springframework.util.StringUtils;
 
@@ -14,6 +16,8 @@ import com.musclegrow.dto.EmployeePageQueryDTO;
 import com.musclegrow.entity.Employee;
 import com.musclegrow.exception.AccountLockedException;
 import com.musclegrow.exception.AccountNotFoundException;
+import com.musclegrow.exception.BaseException;
+import com.musclegrow.exception.PasswordEditFailedException;
 import com.musclegrow.exception.PasswordErrorException;
 import com.musclegrow.mapper.EmployeeMapper;
 import com.musclegrow.result.PageResult;
@@ -163,6 +167,45 @@ public class EmployeeServiceImpl implements EmployeeService {
         // 使用 mybatis-plus 的 updateById 方法，基于传入对象的 id 来更新该对象中有值的字段
         employeeMapper.updateById(employee);
 
+    }
+
+    @Override
+    public void updatePassword(EmployeePasswordUpdateDTO employeePasswordUpdateDTO) {
+        Long employeeId = BaseContext.getCurrentId();
+        if (employeeId == null) {
+            throw new BaseException(MessageConstant.USER_NOT_LOGIN);
+        }
+
+        if (!StringUtils.hasText(employeePasswordUpdateDTO.getOldPassword())
+                || !StringUtils.hasText(employeePasswordUpdateDTO.getNewPassword())
+                || !StringUtils.hasText(employeePasswordUpdateDTO.getConfirmPassword())) {
+            throw new PasswordEditFailedException("密码不能为空");
+        }
+
+        if (!employeePasswordUpdateDTO.getNewPassword().equals(employeePasswordUpdateDTO.getConfirmPassword())) {
+            throw new PasswordEditFailedException("两次输入的新密码不一致");
+        }
+
+        if (employeePasswordUpdateDTO.getOldPassword().equals(employeePasswordUpdateDTO.getNewPassword())) {
+            throw new PasswordEditFailedException("新密码不能与旧密码相同");
+        }
+
+        Employee employee = employeeMapper.selectById(employeeId);
+        if (employee == null) {
+            throw new AccountNotFoundException(MessageConstant.ACCOUNT_NOT_FOUND);
+        }
+
+        if (employee.getStatus() == StatusConstant.DISABLE) {
+            throw new AccountLockedException(MessageConstant.ACCOUNT_LOCKED);
+        }
+
+        String oldPassword = DigestUtils.md5DigestAsHex(employeePasswordUpdateDTO.getOldPassword().getBytes());
+        if (!oldPassword.equals(employee.getPassword())) {
+            throw new PasswordErrorException(MessageConstant.PASSWORD_ERROR);
+        }
+
+        employee.setPassword(DigestUtils.md5DigestAsHex(employeePasswordUpdateDTO.getNewPassword().getBytes()));
+        employeeMapper.updateById(employee);
     }
 
 }

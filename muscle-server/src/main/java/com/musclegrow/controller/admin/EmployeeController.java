@@ -1,8 +1,10 @@
 package com.musclegrow.controller.admin;
 
 import com.musclegrow.constant.JwtClaimsConstant;
+import com.musclegrow.context.BaseContext;
 import com.musclegrow.dto.EmployeeDTO;
 import com.musclegrow.dto.EmployeeLoginDTO;
+import com.musclegrow.dto.EmployeePasswordUpdateDTO;
 import com.musclegrow.dto.EmployeePageQueryDTO;
 import com.musclegrow.entity.Employee;
 import com.musclegrow.properties.JwtProperties;
@@ -71,6 +73,14 @@ public class EmployeeController {
      */
     @PostMapping("/logout")
     public Result<String> logout() {
+        return Result.success();
+    }
+
+    @PutMapping("/password")
+    @ApiOperation("修改当前登录员工密码")
+    public Result updatePassword(@RequestBody EmployeePasswordUpdateDTO employeePasswordUpdateDTO) {
+        log.info("员工修改密码, employeeId={}", BaseContext.getCurrentId());
+        employeeService.updatePassword(employeePasswordUpdateDTO);
         return Result.success();
     }
 

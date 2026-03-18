@@ -22,3 +22,11 @@ export const logoutUser = () => {
     method: 'post'
   });
 };
+
+export const updateUserPassword = (data) => {
+  return request({
+    url: '/user/user/password',
+    method: 'put',
+    data
+  });
+};

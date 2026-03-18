@@ -1,12 +1,46 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import { useRouter } from 'vue-router';
+
+import { updateCurrentEmployeePassword } from '@/api/employee';
 
 const SOCKET_RECONNECT_DELAY = 3000;
 
 const router = useRouter();
 const loginName = ref('');
+const passwordDialogVisible = ref(false);
+const passwordSubmitting = ref(false);
+const passwordFormRef = ref(null);
+
+const passwordForm = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: ''
+});
+
+const validateConfirmPassword = (_, value, callback) => {
+  if (!value) {
+    callback(new Error('请输入确认密码'));
+    return;
+  }
+
+  if (value !== passwordForm.newPassword) {
+    callback(new Error('两次输入的新密码不一致'));
+    return;
+  }
+
+  callback();
+};
+
+const passwordRules = {
+  oldPassword: [{ required: true, message: '请输入旧密码', trigger: 'blur' }],
+  newPassword: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 6, message: '新密码长度不能少于 6 位', trigger: 'blur' }
+  ],
+  confirmPassword: [{ validator: validateConfirmPassword, trigger: 'blur' }]
+};
 
 let socket = null;
 let reconnectTimer = null;
@@ -23,16 +57,18 @@ const getLoginUser = () => {
 
 const syncLoginName = () => {
   const loginUser = getLoginUser();
-  loginName.value = loginUser?.name || loginUser?.username || '';
+  loginName.value = loginUser?.name || loginUser?.userName || loginUser?.username || '';
 };
 
 const getSocketSid = () => {
   const loginUser = getLoginUser();
-  return String(loginUser?.id || loginUser?.username || loginUser?.name || 'admin');
+  return String(loginUser?.id || loginUser?.userName || loginUser?.username || loginUser?.name || 'admin');
 };
 
 const getSocketUrl = () => {
-  const rawBaseUrl = String(import.meta.env.VITE_APP_URL || '').trim().replace(/^['"]|['"]$/g, '');
+  const rawBaseUrl = String(import.meta.env.VITE_APP_URL || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '');
 
   try {
     const targetUrl = rawBaseUrl ? new URL(rawBaseUrl) : new URL(window.location.origin);
@@ -42,6 +78,16 @@ const getSocketUrl = () => {
     const socketProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${socketProtocol}//${window.location.host}/ws/${encodeURIComponent(getSocketSid())}`;
   }
+};
+
+const clearAdminLogin = () => {
+  localStorage.removeItem('loginUser-Admin');
+  localStorage.removeItem('loginUser');
+};
+
+const redirectToLogin = () => {
+  clearAdminLogin();
+  router.push('/login');
 };
 
 const showOrderNotification = (payload) => {
@@ -153,6 +199,47 @@ const disconnectSocket = () => {
   socket = null;
 };
 
+const resetPasswordForm = () => {
+  passwordForm.oldPassword = '';
+  passwordForm.newPassword = '';
+  passwordForm.confirmPassword = '';
+  passwordFormRef.value?.clearValidate();
+};
+
+const openPasswordDialog = () => {
+  resetPasswordForm();
+  passwordDialogVisible.value = true;
+};
+
+const handlePasswordDialogClosed = () => {
+  resetPasswordForm();
+};
+
+const forceLogoutAfterPasswordChange = () => {
+  passwordDialogVisible.value = false;
+  disconnectSocket();
+  redirectToLogin();
+};
+
+const submitPasswordChange = async () => {
+  if (!passwordFormRef.value) {
+    return;
+  }
+
+  await passwordFormRef.value.validate();
+
+  passwordSubmitting.value = true;
+  try {
+    const result = await updateCurrentEmployeePassword(passwordForm);
+    if (result.code === 1) {
+      ElMessage.success('密码修改成功，请重新登录');
+      forceLogoutAfterPasswordChange();
+    }
+  } finally {
+    passwordSubmitting.value = false;
+  }
+};
+
 const logout = () => {
   ElMessageBox.confirm('确认退出登录吗?', '提示', {
     confirmButtonText: '确定',
@@ -160,8 +247,7 @@ const logout = () => {
     type: 'warning'
   }).then(() => {
     disconnectSocket();
-    localStorage.removeItem('loginUser-Admin');
-    localStorage.removeItem('loginUser');
+    clearAdminLogin();
     ElMessage.success('退出登录成功');
     router.push('/login');
   });
@@ -181,13 +267,14 @@ onBeforeUnmount(() => {
   <div class="common-layout">
     <el-container>
       <el-header class="header">
-        <span class="title">Muscle-Grow补剂商城管理端</span>
-        <span class="right_tool">
-          <a href="">
-            <el-icon><EditPen /></el-icon> 修改密码 &nbsp;&nbsp;&nbsp; | &nbsp;&nbsp;&nbsp;
+        <span class="title">Muscle-Grow 补剂商城管理端</span>
+        <span class="right-tool">
+          <a href="javascript:void(0)" @click="openPasswordDialog">
+            <el-icon><EditPen /></el-icon> 修改密码
           </a>
+          <span class="divider">|</span>
           <a href="javascript:void(0)" @click="logout">
-            <el-icon><SwitchButton /></el-icon> 退出登录【{{ loginName || '管理员' }}】
+            <el-icon><SwitchButton /></el-icon> 退出登录，{{ loginName || '管理员' }}
           </a>
         </span>
       </el-header>
@@ -248,6 +335,57 @@ onBeforeUnmount(() => {
         </el-main>
       </el-container>
     </el-container>
+
+    <el-dialog
+      v-model="passwordDialogVisible"
+      title="修改密码"
+      width="460px"
+      destroy-on-close
+      @closed="handlePasswordDialogClosed"
+    >
+      <el-form
+        ref="passwordFormRef"
+        :model="passwordForm"
+        :rules="passwordRules"
+        label-width="92px"
+      >
+        <el-form-item label="旧密码" prop="oldPassword">
+          <el-input
+            v-model="passwordForm.oldPassword"
+            type="password"
+            show-password
+            placeholder="请输入旧密码"
+          />
+        </el-form-item>
+
+        <el-form-item label="新密码" prop="newPassword">
+          <el-input
+            v-model="passwordForm.newPassword"
+            type="password"
+            show-password
+            placeholder="请输入新密码"
+          />
+        </el-form-item>
+
+        <el-form-item label="确认密码" prop="confirmPassword">
+          <el-input
+            v-model="passwordForm.confirmPassword"
+            type="password"
+            show-password
+            placeholder="请再次输入新密码"
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="passwordDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="passwordSubmitting" @click="submitPasswordChange">
+            保存修改
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -259,14 +397,20 @@ onBeforeUnmount(() => {
 .title {
   color: white;
   font-size: 40px;
-  font-family: 妤蜂綋;
   line-height: 60px;
-  font-weight: bolder;
+  font-weight: 700;
 }
 
-.right_tool {
+.right-tool {
   float: right;
+  display: flex;
+  align-items: center;
+  gap: 18px;
   line-height: 60px;
+}
+
+.divider {
+  color: rgba(255, 255, 255, 0.75);
 }
 
 a {
@@ -278,5 +422,11 @@ a {
   width: 220px;
   border-right: 1px solid #ccc;
   height: 100vh;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 </style>

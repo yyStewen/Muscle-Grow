@@ -10,7 +10,7 @@ defineProps({
   }
 });
 
-defineEmits(['go-cart', 'go-address', 'go-orders', 'logout']);
+defineEmits(['go-cart', 'go-address', 'go-orders', 'change-password', 'logout']);
 </script>
 
 <template>
@@ -44,6 +44,11 @@ defineEmits(['go-cart', 'go-address', 'go-orders', 'logout']);
       <el-button class="user-header__orders" @click="$emit('go-orders')">
         <el-icon><Tickets /></el-icon>
         Orders
+      </el-button>
+
+      <el-button class="user-header__password" @click="$emit('change-password')">
+        <el-icon><Lock /></el-icon>
+        Password
       </el-button>
 
       <el-button class="user-header__logout" @click="$emit('logout')">Logout</el-button>
@@ -126,6 +131,7 @@ defineEmits(['go-cart', 'go-address', 'go-orders', 'logout']);
 .user-header__cart-btn,
 .user-header__address,
 .user-header__orders,
+.user-header__password,
 .user-header__logout {
   height: 48px;
   padding: 0 20px;
@@ -146,6 +152,11 @@ defineEmits(['go-cart', 'go-address', 'go-orders', 'logout']);
 
 .user-header__orders {
   background: rgba(255, 240, 215, 0.22);
+  color: #fff7eb;
+}
+
+.user-header__password {
+  background: rgba(255, 255, 255, 0.16);
   color: #fff7eb;
 }
 
