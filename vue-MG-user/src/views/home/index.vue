@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Plus } from '@element-plus/icons-vue';
@@ -9,6 +9,7 @@ import {
   getSetmealsByCategory,
   getSupplementsByCategory
 } from '@/api/shop';
+import { getAvailableVouchers, purchaseVoucher } from '@/api/voucher';
 import CartDock from '@/components/shop/CartDock.vue';
 import SetmealDrawer from '@/components/shop/SetmealDrawer.vue';
 import SpecificationDialog from '@/components/shop/SpecificationDialog.vue';
@@ -24,6 +25,9 @@ const catalogStore = useCatalogStore();
 
 const loading = ref(false);
 const products = ref([]);
+// 优惠券区块独立于商品分类加载，避免切换左侧分类时重复请求同一批券。
+const voucherLoading = ref(false);
+const vouchers = ref([]);
 
 const specDialogVisible = ref(false);
 const activeSupplement = ref(null);
@@ -55,6 +59,25 @@ const heroDescription = computed(() =>
     : 'Browse supplements by category and choose specifications before adding them to the cart.'
 );
 
+const fetchAvailableCoupons = async () => {
+  voucherLoading.value = true;
+
+  try {
+    const res = await getAvailableVouchers();
+    if (res.code === 1) {
+      vouchers.value = res.data || [];
+    } else {
+      vouchers.value = [];
+      ElMessage.error(res.msg || 'Failed to load vouchers.');
+    }
+  } catch (error) {
+    vouchers.value = [];
+  } finally {
+    voucherLoading.value = false;
+  }
+};
+
+// 商品区按分类切换实时刷新，和优惠券展示是两条独立数据链路。
 const fetchProducts = async () => {
   if (!currentCategoryId.value) {
     products.value = [];
@@ -86,6 +109,10 @@ const fetchProducts = async () => {
 };
 
 watch([currentKind, currentCategoryId], fetchProducts, { immediate: true });
+
+onMounted(() => {
+  fetchAvailableCoupons();
+});
 
 const addSupplementDirect = async (product) => {
   const success = await cartStore.addSupplement(product);
@@ -136,6 +163,32 @@ const addSetmealToCart = async (setmeal) => {
 const handleCheckout = () => {
   router.push('/user/cart');
 };
+
+// 按钮文案同时反映一人一券和库存售罄两种前端状态。
+const getVoucherButtonText = (voucher) => {
+  if (voucher.purchased) {
+    return 'Purchased';
+  }
+
+  if (Number(voucher.stock || 0) <= 0) {
+    return 'Sold Out';
+  }
+
+  return `Buy ${formatCurrency(voucher.payValue)}`;
+};
+
+const purchaseVoucherHandle = async (voucher) => {
+  if (voucher.purchased || Number(voucher.stock || 0) <= 0) {
+    return;
+  }
+
+  const res = await purchaseVoucher(voucher.id);
+  if (res.code === 1) {
+    ElMessage.success('Voucher added to your wallet.');
+    // 购买成功后重新拉取列表，用最新库存和购买状态刷新按钮与角标。
+    fetchAvailableCoupons();
+  }
+};
 </script>
 
 <template>
@@ -161,6 +214,54 @@ const handleCheckout = () => {
           in one place for the next order step.
         </span>
       </div>
+    </section>
+
+    <section class="voucher-board" v-loading="voucherLoading">
+      <div class="voucher-board__header">
+        <div>
+          <p>LIVE VOUCHERS</p>
+          <h3>Training Coupon Drops</h3>
+        </div>
+        <span>{{ vouchers.length }} vouchers available right now</span>
+      </div>
+
+      <div v-if="vouchers.length" class="voucher-list">
+        <article v-for="voucher in vouchers" :key="voucher.id" class="voucher-item">
+          <div class="voucher-item__amount">
+            <strong>{{ formatCurrency(voucher.actualValue) }}</strong>
+            <span>Save {{ formatCurrency(voucher.actualValue) }}</span>
+          </div>
+
+          <div class="voucher-item__content">
+            <div class="voucher-item__title-row">
+              <h4>{{ voucher.title }}</h4>
+              <span v-if="voucher.purchased" class="voucher-item__badge">Purchased</span>
+            </div>
+
+            <p>
+              Pay {{ formatCurrency(voucher.payValue) }} to unlock this coupon. It can be claimed once
+              per user and stored in your voucher wallet.
+            </p>
+
+            <div class="voucher-item__meta">
+              <span>Stock {{ voucher.stock }}</span>
+              <span>{{ voucher.beginTime?.replace('T', ' ') }} - {{ voucher.endTime?.replace('T', ' ') }}</span>
+            </div>
+          </div>
+
+          <el-button
+            round
+            type="danger"
+            class="voucher-item__button"
+            :disabled="voucher.purchased || Number(voucher.stock || 0) <= 0"
+            @click="purchaseVoucherHandle(voucher)"
+          >
+            {{ getVoucherButtonText(voucher) }}
+          </el-button>
+        </article>
+      </div>
+
+      <el-empty v-else description="No live vouchers are available right now." />
     </section>
 
     <section class="product-board" v-loading="loading">
@@ -359,6 +460,137 @@ const handleCheckout = () => {
   color: rgba(255, 247, 234, 0.74);
 }
 
+.voucher-board {
+  margin-top: 20px;
+  padding: 28px;
+  background:
+    linear-gradient(135deg, rgba(255, 244, 240, 0.96), rgba(255, 236, 225, 0.92)),
+    #fff;
+  border: 1px solid rgba(203, 92, 70, 0.14);
+  border-radius: 30px;
+  box-shadow: 0 14px 36px rgba(170, 80, 53, 0.08);
+}
+
+.voucher-board__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.voucher-board__header p {
+  margin: 0 0 6px;
+  color: #cb5c46;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.voucher-board__header h3 {
+  margin: 0;
+  font-size: 28px;
+  color: #341913;
+}
+
+.voucher-board__header span {
+  color: #8c5c53;
+  font-size: 14px;
+}
+
+.voucher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.voucher-item {
+  display: grid;
+  grid-template-columns: 150px 1fr auto;
+  gap: 18px;
+  align-items: center;
+  padding: 22px;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 24px;
+  box-shadow: 0 10px 28px rgba(139, 59, 48, 0.08);
+}
+
+.voucher-item__amount {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-height: 108px;
+  padding: 20px 18px;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top right, rgba(255, 236, 176, 0.62), transparent 34%),
+    linear-gradient(135deg, #6e2415, #cb5c46);
+  color: #fff7f0;
+}
+
+.voucher-item__amount strong {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.voucher-item__amount span {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 247, 240, 0.78);
+}
+
+.voucher-item__content h4 {
+  margin: 0;
+  font-size: 22px;
+  color: #321b16;
+}
+
+.voucher-item__content p {
+  margin: 12px 0;
+  color: #745c56;
+  line-height: 1.7;
+}
+
+.voucher-item__title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.voucher-item__badge {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #fff1cf;
+  color: #8a5a13;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.voucher-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.voucher-item__meta span {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #fff3ee;
+  color: #8d6056;
+  font-size: 13px;
+}
+
+.voucher-item__button {
+  min-width: 132px;
+  height: 44px;
+  border: none;
+  background: linear-gradient(135deg, #cb5c46, #f08c4f);
+}
+
 .product-board {
   margin-top: 20px;
   padding: 28px;
@@ -514,6 +746,7 @@ const handleCheckout = () => {
 
 @media (max-width: 1320px) {
   .shop-hero,
+  .voucher-item,
   .product-item {
     grid-template-columns: 1fr;
   }
@@ -525,6 +758,13 @@ const handleCheckout = () => {
 
   .product-item__action {
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 900px) {
+  .voucher-board__header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 

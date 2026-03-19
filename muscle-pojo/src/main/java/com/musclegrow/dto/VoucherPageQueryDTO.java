@@ -1,0 +1,28 @@
+package com.musclegrow.dto;
+
+import lombok.Data;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.io.Serializable;
+import java.time.LocalDateTime;
+
+@Data
+public class VoucherPageQueryDTO implements Serializable {
+
+    private int page;
+
+    private int pageSize;
+
+    private String title;
+
+    /**
+     * 1: 投放中 2: 已结束 3: 已下架 4: 待开始
+     */
+    private Integer status;
+
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime beginTime;
+
+    @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime endTime;
+}
