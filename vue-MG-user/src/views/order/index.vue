@@ -8,6 +8,7 @@ import { useCartStore } from '@/stores/cart';
 import {
   buildOrderSummary,
   formatOrderDateTime,
+  hasRepeatableOrderItems,
   getOrderStatusMeta,
   getPaymentStatusMeta
 } from '@/utils/order';
@@ -133,7 +134,7 @@ const goDetail = (id) => {
 const canPay = (order) => Number(order.status) === 1;
 const canCancel = (order) => [1, 2].includes(Number(order.status));
 const canRemind = (order) => [2, 3, 4].includes(Number(order.status));
-const canRepeat = (order) => [5, 6].includes(Number(order.status));
+const canRepeat = (order) => [5, 6].includes(Number(order.status)) && hasRepeatableOrderItems(order);
 
 onMounted(async () => {
   await fetchOrders();

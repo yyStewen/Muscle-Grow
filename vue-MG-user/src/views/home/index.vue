@@ -170,6 +170,10 @@ const getVoucherButtonText = (voucher) => {
     return 'Purchased';
   }
 
+  if (Number(voucher.pendingOrderId || 0) > 0) {
+    return 'Continue Pay';
+  }
+
   if (Number(voucher.stock || 0) <= 0) {
     return 'Sold Out';
   }
@@ -178,15 +182,23 @@ const getVoucherButtonText = (voucher) => {
 };
 
 const purchaseVoucherHandle = async (voucher) => {
-  if (voucher.purchased || Number(voucher.stock || 0) <= 0) {
+  if (voucher.purchased) {
+    return;
+  }
+
+  if (Number(voucher.pendingOrderId || 0) > 0) {
+    router.push(`/user/orders/${voucher.pendingOrderId}`);
+    return;
+  }
+
+  if (Number(voucher.stock || 0) <= 0) {
     return;
   }
 
   const res = await purchaseVoucher(voucher.id);
   if (res.code === 1) {
-    ElMessage.success('Voucher added to your wallet.');
-    // 购买成功后重新拉取列表，用最新库存和购买状态刷新按钮与角标。
-    fetchAvailableCoupons();
+    ElMessage.success('Voucher order created. Please complete payment next.');
+    router.push(`/user/orders/${res.data.id}`);
   }
 };
 </script>
@@ -236,6 +248,12 @@ const purchaseVoucherHandle = async (voucher) => {
             <div class="voucher-item__title-row">
               <h4>{{ voucher.title }}</h4>
               <span v-if="voucher.purchased" class="voucher-item__badge">Purchased</span>
+              <span
+                v-else-if="Number(voucher.pendingOrderId || 0) > 0"
+                class="voucher-item__badge voucher-item__badge--pending"
+              >
+                Pending Payment
+              </span>
             </div>
 
             <p>
@@ -253,7 +271,7 @@ const purchaseVoucherHandle = async (voucher) => {
             round
             type="danger"
             class="voucher-item__button"
-            :disabled="voucher.purchased || Number(voucher.stock || 0) <= 0"
+            :disabled="voucher.purchased || (!voucher.pendingOrderId && Number(voucher.stock || 0) <= 0)"
             @click="purchaseVoucherHandle(voucher)"
           >
             {{ getVoucherButtonText(voucher) }}
@@ -568,6 +586,11 @@ const purchaseVoucherHandle = async (voucher) => {
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.voucher-item__badge--pending {
+  background: #fff0dc;
+  color: #b36a18;
 }
 
 .voucher-item__meta {

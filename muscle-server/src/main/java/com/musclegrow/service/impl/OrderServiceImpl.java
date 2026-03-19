@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.musclegrow.constant.MessageConstant;
+import com.musclegrow.constant.VoucherStorageStatusConstant;
 import com.musclegrow.context.BaseContext;
 import com.musclegrow.dto.OrdersCancelDTO;
 import com.musclegrow.dto.OrdersConfirmDTO;
@@ -17,6 +18,8 @@ import com.musclegrow.entity.OrderDetail;
 import com.musclegrow.entity.Orders;
 import com.musclegrow.entity.ShoppingCart;
 import com.musclegrow.entity.User;
+import com.musclegrow.entity.Voucher;
+import com.musclegrow.entity.VoucherStorage;
 import com.musclegrow.exception.AddressBookBusinessException;
 import com.musclegrow.exception.OrderBusinessException;
 import com.musclegrow.exception.ShoppingCartBusinessException;
@@ -25,6 +28,8 @@ import com.musclegrow.mapper.OrderDetailMapper;
 import com.musclegrow.mapper.OrderMapper;
 import com.musclegrow.mapper.ShoppingCartMapper;
 import com.musclegrow.mapper.UserMapper;
+import com.musclegrow.mapper.VoucherMapper;
+import com.musclegrow.mapper.VoucherStorageMapper;
 import com.musclegrow.result.PageResult;
 import com.musclegrow.service.OrderService;
 import com.musclegrow.vo.OrderPaymentVO;
@@ -50,6 +55,11 @@ import java.util.stream.Collectors;
 @Slf4j
 public class OrderServiceImpl implements OrderService {
 
+    private static final String MSG_VOUCHER_ORDER_REPEAT_NOT_SUPPORTED = "\u4f18\u60e0\u5238\u8ba2\u5355\u4e0d\u652f\u6301\u518d\u6765\u4e00\u5355";
+    private static final String MSG_VOUCHER_NOT_FOUND = "\u4f18\u60e0\u5238\u4e0d\u5b58\u5728";
+    private static final String MSG_VOUCHER_ALREADY_PURCHASED = "\u8be5\u4f18\u60e0\u5238\u6bcf\u4eba\u53ea\u80fd\u8d2d\u4e70\u4e00\u6b21";
+    private static final String MSG_VOUCHER_NOT_AVAILABLE = "\u8be5\u4f18\u60e0\u5238\u5df2\u4e0b\u67b6\u3001\u8fc7\u671f\u6216\u5df2\u552e\u7f44";
+
     @Autowired
     private OrderMapper orderMapper;
     @Autowired
@@ -62,6 +72,10 @@ public class OrderServiceImpl implements OrderService {
     private UserMapper userMapper;
     @Autowired
     private WebSocketServer webSocketServer;
+    @Autowired
+    private VoucherMapper voucherMapper;
+    @Autowired
+    private VoucherStorageMapper voucherStorageMapper;
 
     /**
      * 用户下单
@@ -140,7 +154,7 @@ public class OrderServiceImpl implements OrderService {
             throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
         }
 
-        markOrderPaid(orders, ordersPaymentDTO.getPayMethod());
+        completePaidOrder(orders, ordersPaymentDTO.getPayMethod());
 
         return OrderPaymentVO.builder()
                 .nonceStr(orders.getNumber())
@@ -157,6 +171,7 @@ public class OrderServiceImpl implements OrderService {
      * @param outTradeNo 订单号
      */
     @Override
+    @Transactional
     public void paySuccess(String outTradeNo) {
         Orders orders = orderMapper.selectOne(new LambdaQueryWrapper<Orders>()
                 .eq(Orders::getNumber, outTradeNo)
@@ -170,7 +185,7 @@ public class OrderServiceImpl implements OrderService {
             return;
         }
 
-        markOrderPaid(orders, orders.getPayMethod());
+        completePaidOrder(orders, orders.getPayMethod());
     }
 
     /**
@@ -256,7 +271,15 @@ public class OrderServiceImpl implements OrderService {
         Orders orders = getUserOrderOrThrow(id);
         List<OrderDetail> orderDetailList = listOrderDetailsByOrderId(orders.getId());
 
-        for (OrderDetail orderDetail : orderDetailList) {
+        List<OrderDetail> repeatableOrderDetails = orderDetailList.stream()
+                .filter(detail -> detail.getSupplementId() != null || detail.getSetmealId() != null)
+                .collect(Collectors.toList());
+
+        if (repeatableOrderDetails.isEmpty()) {
+            throw new OrderBusinessException(MSG_VOUCHER_ORDER_REPEAT_NOT_SUPPORTED);
+        }
+
+        for (OrderDetail orderDetail : repeatableOrderDetails) {
             ShoppingCart shoppingCart = new ShoppingCart();
             BeanUtils.copyProperties(orderDetail, shoppingCart, "id");
             shoppingCart.setUserId(getCurrentUserId());
@@ -536,6 +559,65 @@ public class OrderServiceImpl implements OrderService {
                 .checkoutTime(LocalDateTime.now())
                 .build());
         sendOrderNotification(1, orders.getId(), orders.getNumber());
+    }
+
+    private void completePaidOrder(Orders orders, Integer payMethod) {
+        List<OrderDetail> orderDetailList = listOrderDetailsByOrderId(orders.getId());
+        if (isVoucherOrder(orderDetailList)) {
+            completeVoucherOrder(orders, orderDetailList.get(0), payMethod);
+            return;
+        }
+
+        markOrderPaid(orders, payMethod);
+    }
+
+    private boolean isVoucherOrder(List<OrderDetail> orderDetailList) {
+        return orderDetailList != null
+                && orderDetailList.size() == 1
+                && orderDetailList.get(0).getVoucherId() != null
+                && orderDetailList.get(0).getSupplementId() == null
+                && orderDetailList.get(0).getSetmealId() == null;
+    }
+
+    private void completeVoucherOrder(Orders orders, OrderDetail orderDetail, Integer payMethod) {
+        Long voucherId = orderDetail.getVoucherId();
+        Voucher voucher = voucherMapper.selectById(voucherId);
+        if (voucher == null) {
+            throw new OrderBusinessException(MSG_VOUCHER_NOT_FOUND);
+        }
+
+        Long count = voucherStorageMapper.selectCount(new LambdaQueryWrapper<VoucherStorage>()
+                .eq(VoucherStorage::getUserId, orders.getUserId())
+                .eq(VoucherStorage::getVoucherId, voucherId));
+        if (count != null && count > 0) {
+            throw new OrderBusinessException(MSG_VOUCHER_ALREADY_PURCHASED);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        int affected = voucherMapper.deductStock(voucherId, now);
+        if (affected == 0) {
+            throw new OrderBusinessException(MSG_VOUCHER_NOT_AVAILABLE);
+        }
+
+        orderMapper.updateById(Orders.builder()
+                .id(orders.getId())
+                .status(Orders.COMPLETED)
+                .payStatus(Orders.PAID)
+                .payMethod(payMethod)
+                .checkoutTime(now)
+                .deliveryTime(now)
+                .build());
+
+        voucherStorageMapper.insert(VoucherStorage.builder()
+                .userId(orders.getUserId())
+                .voucherId(voucherId)
+                .orderId(null)
+                .name(voucher.getTitle())
+                .actualValue(voucher.getActualValue())
+                .status(VoucherStorageStatusConstant.UNUSED)
+                .createTime(now)
+                .expireTime(voucher.getEndTime())
+                .build());
     }
 
     private void markOrderCancelled(Orders orders, String cancelReason, String rejectionReason, boolean refund) {

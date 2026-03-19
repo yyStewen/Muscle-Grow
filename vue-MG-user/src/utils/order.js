@@ -37,3 +37,8 @@ export const buildOrderSummary = (order) => {
     })
     .join('; ');
 };
+
+export const hasRepeatableOrderItems = (order) => {
+  const details = Array.isArray(order?.orderDetailList) ? order.orderDetailList : [];
+  return details.some((item) => item?.supplementId || item?.setmealId);
+};

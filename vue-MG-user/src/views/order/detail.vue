@@ -8,6 +8,7 @@ import { useCartStore } from '@/stores/cart';
 import {
   buildOrderSummary,
   formatOrderDateTime,
+  hasRepeatableOrderItems,
   getOrderStatusMeta,
   getPaymentStatusMeta
 } from '@/utils/order';
@@ -112,7 +113,9 @@ const handleRemind = async () => {
 const canPay = computed(() => Number(order.value?.status) === 1);
 const canCancel = computed(() => [1, 2].includes(Number(order.value?.status)));
 const canRemind = computed(() => [2, 3, 4].includes(Number(order.value?.status)));
-const canRepeat = computed(() => [5, 6].includes(Number(order.value?.status)));
+const canRepeat = computed(() =>
+  [5, 6].includes(Number(order.value?.status)) && hasRepeatableOrderItems(order.value)
+);
 
 onMounted(async () => {
   await fetchDetail();
@@ -196,7 +199,8 @@ onMounted(async () => {
               :key="item.id"
               class="order-item"
             >
-              <img :src="item.image" :alt="item.name" />
+              <img v-if="item.image" :src="item.image" :alt="item.name" />
+              <div v-else class="order-item__placeholder">Voucher</div>
               <div class="order-item__body">
                 <strong>{{ item.name }}</strong>
                 <span v-if="item.supplementDetail">{{ item.supplementDetail }}</span>
@@ -376,6 +380,20 @@ onMounted(async () => {
   object-fit: cover;
   border-radius: 18px;
   background: #fff0dc;
+}
+
+.order-item__placeholder {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #fff0dc, #ffe2bf);
+  color: #b16b22;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .order-item__body strong,

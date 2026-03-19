@@ -30,4 +30,6 @@ public class UserVoucherVO implements Serializable {
     private LocalDateTime endTime;
 
     private Boolean purchased;
+
+    private Long pendingOrderId;
 }

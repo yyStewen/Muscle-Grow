@@ -3,14 +3,20 @@ package com.musclegrow.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.musclegrow.constant.VoucherStatusConstant;
-import com.musclegrow.constant.VoucherStorageStatusConstant;
 import com.musclegrow.context.BaseContext;
+import com.musclegrow.entity.OrderDetail;
+import com.musclegrow.entity.Orders;
+import com.musclegrow.entity.User;
 import com.musclegrow.entity.Voucher;
 import com.musclegrow.entity.VoucherStorage;
 import com.musclegrow.exception.BaseException;
+import com.musclegrow.mapper.OrderDetailMapper;
+import com.musclegrow.mapper.OrderMapper;
+import com.musclegrow.mapper.UserMapper;
 import com.musclegrow.mapper.VoucherMapper;
 import com.musclegrow.mapper.VoucherStorageMapper;
 import com.musclegrow.service.UserVoucherService;
+import com.musclegrow.vo.OrderSubmitVO;
 import com.musclegrow.vo.UserVoucherVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -19,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -40,9 +47,17 @@ public class UserVoucherServiceImpl implements UserVoucherService {
     @Autowired
     private VoucherStorageMapper voucherStorageMapper;
 
+    @Autowired
+    private OrderMapper orderMapper;
+
+    @Autowired
+    private OrderDetailMapper orderDetailMapper;
+
+    @Autowired
+    private UserMapper userMapper;
+
     @Override
     public List<UserVoucherVO> listAvailable() {
-        // 用户端只展示当前还能购买的券，因此先把自然过期的数据同步掉。
         syncExpiredStatus();
 
         Long userId = getCurrentUserId();
@@ -55,8 +70,8 @@ public class UserVoucherServiceImpl implements UserVoucherService {
                 .orderByAsc(Voucher::getEndTime)
                 .orderByDesc(Voucher::getActualValue));
 
-        // 单独查用户已拥有的券，用于前端直接标记“已购买”。
         Set<Long> purchasedVoucherIds = getPurchasedVoucherIds(userId, vouchers);
+        Map<Long, Long> pendingVoucherOrderMap = getPendingVoucherOrderMap(userId, vouchers);
 
         return vouchers.stream()
                 .map(voucher -> UserVoucherVO.builder()
@@ -68,15 +83,15 @@ public class UserVoucherServiceImpl implements UserVoucherService {
                         .beginTime(voucher.getBeginTime())
                         .endTime(voucher.getEndTime())
                         .purchased(purchasedVoucherIds.contains(voucher.getId()))
+                        .pendingOrderId(pendingVoucherOrderMap.get(voucher.getId()))
                         .build())
                 .collect(Collectors.toList());
     }
 
     @Override
     @Transactional
-    public Long purchase(Long voucherId) {
+    public OrderSubmitVO purchase(Long voucherId) {
         Long userId = getCurrentUserId();
-        // 同一 JVM 内对“同一用户购买同一张券”做串行化，降低重复下单窗口。
         String lockKey = ("voucher:purchase:" + userId + ":" + voucherId).intern();
 
         synchronized (lockKey) {
@@ -84,8 +99,7 @@ public class UserVoucherServiceImpl implements UserVoucherService {
         }
     }
 
-    private Long doPurchase(Long userId, Long voucherId) {
-        // 购买前再次同步状态，避免刚过期的券继续被领取。
+    private OrderSubmitVO doPurchase(Long userId, Long voucherId) {
         syncExpiredStatus();
 
         LocalDateTime now = LocalDateTime.now();
@@ -110,31 +124,41 @@ public class UserVoucherServiceImpl implements UserVoucherService {
             throw new BaseException(MSG_VOUCHER_SOLD_OUT);
         }
 
-        boolean alreadyPurchased = hasPurchased(userId, voucherId);
-        if (alreadyPurchased) {
+        if (hasPurchased(userId, voucherId) || hasPendingVoucherOrder(userId, voucherId)) {
             throw new BaseException(MSG_VOUCHER_ALREADY_PURCHASED);
         }
 
-        // 库存扣减放到数据库原子更新里处理，避免并发下出现超卖。
-        int affected = voucherMapper.deductStock(voucherId, now);
-        if (affected == 0) {
-            throw new BaseException(MSG_VOUCHER_SOLD_OUT);
-        }
-
-        // 领券时冗余保存标题、面额和过期时间，后续即使券主表被改动，用户券快照仍然稳定。
-        VoucherStorage voucherStorage = VoucherStorage.builder()
+        User user = userMapper.selectById(userId);
+        Orders order = Orders.builder()
+                .number(String.valueOf(System.currentTimeMillis()))
+                .status(Orders.PENDING_PAYMENT)
                 .userId(userId)
-                .voucherId(voucherId)
-                .orderId(null)
-                .name(voucher.getTitle())
-                .actualValue(voucher.getActualValue())
-                .status(VoucherStorageStatusConstant.UNUSED)
-                .createTime(now)
-                .expireTime(voucher.getEndTime())
+                .addressBookId(0L)
+                .orderTime(now)
+                .payMethod(1)
+                .payStatus(Orders.UN_PAID)
+                .amount(voucher.getPayValue())
+                .remark("\u4f18\u60e0\u5238\u8d2d\u4e70\u8ba2\u5355")
+                .userName(user != null ? user.getName() : null)
+                .mailAmount(0)
                 .build();
-        voucherStorageMapper.insert(voucherStorage);
+        orderMapper.insert(order);
 
-        return voucherStorage.getId();
+        OrderDetail orderDetail = OrderDetail.builder()
+                .orderId(order.getId())
+                .voucherId(voucherId)
+                .name(voucher.getTitle())
+                .number(1)
+                .amount(voucher.getPayValue())
+                .build();
+        orderDetailMapper.insert(orderDetail);
+
+        return OrderSubmitVO.builder()
+                .id(order.getId())
+                .orderNumber(order.getNumber())
+                .orderAmount(order.getAmount())
+                .orderTime(order.getOrderTime())
+                .build();
     }
 
     private Set<Long> getPurchasedVoucherIds(Long userId, List<Voucher> vouchers) {
@@ -152,11 +176,61 @@ public class UserVoucherServiceImpl implements UserVoucherService {
                 .collect(Collectors.toSet());
     }
 
+    private Map<Long, Long> getPendingVoucherOrderMap(Long userId, List<Voucher> vouchers) {
+        if (vouchers == null || vouchers.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<Long> pendingOrderIds = listPendingVoucherOrderIds(userId);
+        if (pendingOrderIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        List<Long> voucherIds = vouchers.stream().map(Voucher::getId).collect(Collectors.toList());
+        List<OrderDetail> orderDetails = orderDetailMapper.selectList(new LambdaQueryWrapper<OrderDetail>()
+                .select(OrderDetail::getOrderId, OrderDetail::getVoucherId)
+                .in(OrderDetail::getOrderId, pendingOrderIds)
+                .in(OrderDetail::getVoucherId, voucherIds));
+
+        return orderDetails.stream()
+                .filter(detail -> detail.getVoucherId() != null)
+                .collect(Collectors.toMap(
+                        OrderDetail::getVoucherId,
+                        OrderDetail::getOrderId,
+                        (left, right) -> left
+                ));
+    }
+
     private boolean hasPurchased(Long userId, Long voucherId) {
         Long count = voucherStorageMapper.selectCount(new LambdaQueryWrapper<VoucherStorage>()
                 .eq(VoucherStorage::getUserId, userId)
                 .eq(VoucherStorage::getVoucherId, voucherId));
         return count != null && count > 0;
+    }
+
+    private boolean hasPendingVoucherOrder(Long userId, Long voucherId) {
+        List<Long> pendingOrderIds = listPendingVoucherOrderIds(userId);
+        if (pendingOrderIds.isEmpty()) {
+            return false;
+        }
+
+        Long count = orderDetailMapper.selectCount(new LambdaQueryWrapper<OrderDetail>()
+                .in(OrderDetail::getOrderId, pendingOrderIds)
+                .eq(OrderDetail::getVoucherId, voucherId));
+        return count != null && count > 0;
+    }
+
+    private List<Long> listPendingVoucherOrderIds(Long userId) {
+        List<Orders> orders = orderMapper.selectList(new LambdaQueryWrapper<Orders>()
+                .select(Orders::getId)
+                .eq(Orders::getUserId, userId)
+                .eq(Orders::getStatus, Orders.PENDING_PAYMENT));
+
+        if (orders == null || orders.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return orders.stream().map(Orders::getId).collect(Collectors.toList());
     }
 
     private Long getCurrentUserId() {
@@ -173,7 +247,6 @@ public class UserVoucherServiceImpl implements UserVoucherService {
                 .build();
 
         LambdaUpdateWrapper<Voucher> updateWrapper = new LambdaUpdateWrapper<>();
-        // 用户端和管理端共享同一套过期同步逻辑，保证两边看到的状态一致。
         updateWrapper.ne(Voucher::getStatus, VoucherStatusConstant.ENDED)
                 .lt(Voucher::getEndTime, LocalDateTime.now());
 

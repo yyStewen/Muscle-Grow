@@ -2,6 +2,7 @@ package com.musclegrow.controller.user;
 
 import com.musclegrow.result.Result;
 import com.musclegrow.service.UserVoucherService;
+import com.musclegrow.vo.OrderSubmitVO;
 import com.musclegrow.vo.UserVoucherVO;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -28,7 +29,7 @@ public class VoucherController {
 
     @PostMapping("/purchase/{id}")
     @ApiOperation("Purchase voucher")
-    public Result<Long> purchase(@PathVariable("id") Long id) {
+    public Result<OrderSubmitVO> purchase(@PathVariable("id") Long id) {
         log.info("user purchase voucher, voucherId={}", id);
         return Result.success(userVoucherService.purchase(id));
     }
