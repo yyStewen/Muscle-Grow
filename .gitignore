@@ -4,3 +4,9 @@
 *.class
 *Test.java
 **/test/
+!muscle-server/src/test/
+!muscle-server/src/test/java/
+!muscle-server/src/test/java/com/
+!muscle-server/src/test/java/com/musclegrow/
+!muscle-server/src/test/java/com/musclegrow/rabbitmq/
+!muscle-server/src/test/java/com/musclegrow/rabbitmq/RabbitMqMessageFlowTest.java

@@ -11,7 +11,6 @@ import java.time.LocalDateTime;
 @Mapper
 public interface VoucherMapper extends BaseMapper<Voucher> {
 
-    // 通过单条更新语句完成库存校验和扣减，避免并发购买时出现负库存。
     @Update("update voucher " +
             "set stock = stock - 1 " +
             "where id = #{id} " +
@@ -20,4 +19,7 @@ public interface VoucherMapper extends BaseMapper<Voucher> {
             "and begin_time <= #{now} " +
             "and end_time >= #{now}")
     int deductStock(@Param("id") Long id, @Param("now") LocalDateTime now);
+
+    @Update("update voucher set stock = stock + 1 where id = #{id}")
+    int restoreStock(@Param("id") Long id);
 }

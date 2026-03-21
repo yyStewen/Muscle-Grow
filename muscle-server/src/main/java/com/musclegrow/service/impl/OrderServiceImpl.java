@@ -2,11 +2,12 @@ package com.musclegrow.service.impl;
 
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.musclegrow.constant.MessageConstant;
+import com.musclegrow.constant.VoucherOrderConstant;
 import com.musclegrow.constant.VoucherStorageStatusConstant;
 import com.musclegrow.context.BaseContext;
+import com.musclegrow.dto.GoodsSalesDTO;
 import com.musclegrow.dto.OrdersCancelDTO;
 import com.musclegrow.dto.OrdersConfirmDTO;
 import com.musclegrow.dto.OrdersPageQueryDTO;
@@ -32,6 +33,7 @@ import com.musclegrow.mapper.VoucherMapper;
 import com.musclegrow.mapper.VoucherStorageMapper;
 import com.musclegrow.result.PageResult;
 import com.musclegrow.service.OrderService;
+import com.musclegrow.service.VoucherSeckillRedisService;
 import com.musclegrow.vo.OrderPaymentVO;
 import com.musclegrow.vo.OrderStatisticsVO;
 import com.musclegrow.vo.OrderSubmitVO;
@@ -59,6 +61,8 @@ public class OrderServiceImpl implements OrderService {
     private static final String MSG_VOUCHER_NOT_FOUND = "\u4f18\u60e0\u5238\u4e0d\u5b58\u5728";
     private static final String MSG_VOUCHER_ALREADY_PURCHASED = "\u8be5\u4f18\u60e0\u5238\u6bcf\u4eba\u53ea\u80fd\u8d2d\u4e70\u4e00\u6b21";
     private static final String MSG_VOUCHER_NOT_AVAILABLE = "\u8be5\u4f18\u60e0\u5238\u5df2\u4e0b\u67b6\u3001\u8fc7\u671f\u6216\u5df2\u552e\u7f44";
+    private static final String USER_CANCEL_REASON = "\u7528\u6237\u53d6\u6d88\u8ba2\u5355";
+    private static final String TIMEOUT_CANCEL_REASON = "\u652f\u4ed8\u8d85\u65f6\uff0c\u81ea\u52a8\u53d6\u6d88";
 
     @Autowired
     private OrderMapper orderMapper;
@@ -76,13 +80,9 @@ public class OrderServiceImpl implements OrderService {
     private VoucherMapper voucherMapper;
     @Autowired
     private VoucherStorageMapper voucherStorageMapper;
+    @Autowired
+    private VoucherSeckillRedisService voucherSeckillRedisService;
 
-    /**
-     * 用户下单
-     *
-     * @param ordersSubmitDTO 提交订单参数
-     * @return 下单结果
-     */
     @Override
     @Transactional
     public OrderSubmitVO submitOrder(OrdersSubmitDTO ordersSubmitDTO) {
@@ -129,12 +129,6 @@ public class OrderServiceImpl implements OrderService {
                 .build();
     }
 
-    /**
-     * 模拟订单支付
-     *
-     * @param ordersPaymentDTO 支付参数
-     * @return 模拟支付结果
-     */
     @Override
     @Transactional
     public OrderPaymentVO payment(OrdersPaymentDTO ordersPaymentDTO) {
@@ -155,7 +149,6 @@ public class OrderServiceImpl implements OrderService {
         }
 
         completePaidOrder(orders, ordersPaymentDTO.getPayMethod());
-
         return OrderPaymentVO.builder()
                 .nonceStr(orders.getNumber())
                 .paySign("MOCK_PAY_SUCCESS")
@@ -165,11 +158,6 @@ public class OrderServiceImpl implements OrderService {
                 .build();
     }
 
-    /**
-     * 支付成功，修改订单状态
-     *
-     * @param outTradeNo 订单号
-     */
     @Override
     @Transactional
     public void paySuccess(String outTradeNo) {
@@ -177,25 +165,17 @@ public class OrderServiceImpl implements OrderService {
                 .eq(Orders::getNumber, outTradeNo)
                 .last("limit 1"));
         if (orders == null) {
-            log.warn("支付成功回调未找到订单，orderNumber={}", outTradeNo);
+            log.warn("payment callback order not found, orderNumber={}", outTradeNo);
             return;
         }
         if (!Orders.PENDING_PAYMENT.equals(orders.getStatus())) {
-            log.info("订单已不是待支付状态，忽略重复支付回调，orderNumber={}, status={}", outTradeNo, orders.getStatus());
+            log.info("ignore repeated payment callback, orderNumber={}, status={}", outTradeNo, orders.getStatus());
             return;
         }
 
         completePaidOrder(orders, orders.getPayMethod());
     }
 
-    /**
-     * 用户端订单分页查询
-     *
-     * @param pageNum  页码
-     * @param pageSize 每页大小
-     * @param status   订单状态
-     * @return 分页结果
-     */
     @Override
     public PageResult pageQuery4User(int pageNum, int pageSize, Integer status) {
         Page<Orders> page = new Page<>(pageNum, pageSize);
@@ -211,35 +191,18 @@ public class OrderServiceImpl implements OrderService {
         return new PageResult(resultPage.getTotal(), records);
     }
 
-    /**
-     * 查询订单详情
-     *
-     * @param id 订单 id
-     * @return 订单详情
-     */
     @Override
     public OrderVO details(Long id) {
         Orders orders = getOrderOrThrow(id);
         return buildOrderVOWithDetails(orders);
     }
 
-    /**
-     * 用户端查询订单详情
-     *
-     * @param id 订单 id
-     * @return 订单详情
-     */
     @Override
     public OrderVO userDetails(Long id) {
         Orders orders = getUserOrderOrThrow(id);
         return buildOrderVOWithDetails(orders);
     }
 
-    /**
-     * 用户取消订单
-     *
-     * @param id 订单 id
-     */
     @Override
     @Transactional
     public void userCancelById(Long id) {
@@ -247,11 +210,12 @@ public class OrderServiceImpl implements OrderService {
         Integer status = orders.getStatus();
 
         if (Orders.PENDING_PAYMENT.equals(status)) {
-            markOrderCancelled(orders, "用户取消订单", null, false);
+            markOrderCancelled(orders, USER_CANCEL_REASON, null, false);
+            restoreVoucherSeckillStock(orders);
             return;
         }
         if (Orders.TO_BE_CONFIRMED.equals(status)) {
-            markOrderCancelled(orders, "用户取消订单", null, Orders.PAID.equals(orders.getPayStatus()));
+            markOrderCancelled(orders, USER_CANCEL_REASON, null, Orders.PAID.equals(orders.getPayStatus()));
             return;
         }
         if (Orders.CONFIRMED.equals(status) || Orders.DELIVERY_IN_PROGRESS.equals(status)) {
@@ -260,11 +224,6 @@ public class OrderServiceImpl implements OrderService {
         throw new OrderBusinessException(MessageConstant.ORDER_STATUS_ERROR);
     }
 
-    /**
-     * 再来一单
-     *
-     * @param id 订单 id
-     */
     @Override
     @Transactional
     public void repetition(Long id) {
@@ -288,12 +247,6 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    /**
-     * 条件搜索订单
-     *
-     * @param ordersPageQueryDTO 搜索条件
-     * @return 分页结果
-     */
     @Override
     public PageResult conditionSearch(OrdersPageQueryDTO ordersPageQueryDTO) {
         Page<Orders> page = new Page<>(ordersPageQueryDTO.getPage(), ordersPageQueryDTO.getPageSize());
@@ -312,11 +265,6 @@ public class OrderServiceImpl implements OrderService {
         return new PageResult(resultPage.getTotal(), orderVOList);
     }
 
-    /**
-     * 各个状态的订单数量统计
-     *
-     * @return 订单统计
-     */
     @Override
     public OrderStatisticsVO statistics() {
         OrderStatisticsVO orderStatisticsVO = new OrderStatisticsVO();
@@ -326,11 +274,6 @@ public class OrderServiceImpl implements OrderService {
         return orderStatisticsVO;
     }
 
-    /**
-     * 商家接单
-     *
-     * @param ordersConfirmDTO 接单参数
-     */
     @Override
     public void confirm(OrdersConfirmDTO ordersConfirmDTO) {
         Orders orders = getOrderOrThrow(ordersConfirmDTO.getId());
@@ -344,11 +287,6 @@ public class OrderServiceImpl implements OrderService {
                 .build());
     }
 
-    /**
-     * 商家拒单
-     *
-     * @param ordersRejectionDTO 拒单参数
-     */
     @Override
     @Transactional
     public void rejection(OrdersRejectionDTO ordersRejectionDTO) {
@@ -369,11 +307,6 @@ public class OrderServiceImpl implements OrderService {
         );
     }
 
-    /**
-     * 商家取消订单
-     *
-     * @param ordersCancelDTO 取消参数
-     */
     @Override
     @Transactional
     public void cancel(OrdersCancelDTO ordersCancelDTO) {
@@ -397,11 +330,6 @@ public class OrderServiceImpl implements OrderService {
         );
     }
 
-    /**
-     * 派送订单
-     *
-     * @param id 订单 id
-     */
     @Override
     public void delivery(Long id) {
         Orders orders = getOrderOrThrow(id);
@@ -415,11 +343,6 @@ public class OrderServiceImpl implements OrderService {
                 .build());
     }
 
-    /**
-     * 完成订单
-     *
-     * @param id 订单 id
-     */
     @Override
     public void complete(Long id) {
         Orders orders = getOrderOrThrow(id);
@@ -434,11 +357,6 @@ public class OrderServiceImpl implements OrderService {
                 .build());
     }
 
-    /**
-     * 客户催单
-     *
-     * @param id 订单 id
-     */
     @Override
     public void reminder(Long id) {
         Orders orders = getUserOrderOrThrow(id);
@@ -457,20 +375,18 @@ public class OrderServiceImpl implements OrderService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime timeoutThreshold = now.minusMinutes(15);
 
-        int affected = orderMapper.update(
-                Orders.builder()
-                        .status(Orders.CANCELLED)
-                        .cancelReason("支付超时，自动取消")
-                        .cancelTime(now)
-                        .build(),
-                new LambdaUpdateWrapper<Orders>()
-                        .eq(Orders::getStatus, Orders.PENDING_PAYMENT)
-                        .eq(Orders::getPayStatus, Orders.UN_PAID)
-                        .le(Orders::getOrderTime, timeoutThreshold)
-        );
+        List<Orders> timeoutOrders = orderMapper.selectList(new LambdaQueryWrapper<Orders>()
+                .eq(Orders::getStatus, Orders.PENDING_PAYMENT)
+                .eq(Orders::getPayStatus, Orders.UN_PAID)
+                .le(Orders::getOrderTime, timeoutThreshold));
 
-        if (affected > 0) {
-            log.info("处理支付超时订单完成，count={}", affected);
+        for (Orders order : timeoutOrders) {
+            markOrderCancelled(order, TIMEOUT_CANCEL_REASON, null, false);
+            restoreVoucherSeckillStock(order);
+        }
+
+        if (!timeoutOrders.isEmpty()) {
+            log.info("processed timeout orders, count={}", timeoutOrders.size());
         }
     }
 
@@ -484,12 +400,12 @@ public class OrderServiceImpl implements OrderService {
                         .status(Orders.COMPLETED)
                         .deliveryTime(now)
                         .build(),
-                new LambdaUpdateWrapper<Orders>()
+                new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Orders>()
                         .eq(Orders::getStatus, Orders.DELIVERY_IN_PROGRESS)
         );
 
         if (affected > 0) {
-            log.info("处理派送中自动完成订单完成，count={}", affected);
+            log.info("processed delivery orders automatically, count={}", affected);
         }
     }
 
@@ -580,6 +496,11 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private void completeVoucherOrder(Orders orders, OrderDetail orderDetail, Integer payMethod) {
+        if (isSeckillVoucherOrder(orders)) {
+            completeSeckillVoucherOrder(orders, orderDetail, payMethod);
+            return;
+        }
+
         Long voucherId = orderDetail.getVoucherId();
         Voucher voucher = voucherMapper.selectById(voucherId);
         if (voucher == null) {
@@ -611,13 +532,50 @@ public class OrderServiceImpl implements OrderService {
         voucherStorageMapper.insert(VoucherStorage.builder()
                 .userId(orders.getUserId())
                 .voucherId(voucherId)
-                .orderId(null)
+                .orderId(orders.getId())
                 .name(voucher.getTitle())
                 .actualValue(voucher.getActualValue())
                 .status(VoucherStorageStatusConstant.UNUSED)
                 .createTime(now)
                 .expireTime(voucher.getEndTime())
                 .build());
+    }
+
+    private void completeSeckillVoucherOrder(Orders orders, OrderDetail orderDetail, Integer payMethod) {
+        Long voucherId = orderDetail.getVoucherId();
+        Voucher voucher = voucherMapper.selectById(voucherId);
+        if (voucher == null) {
+            throw new OrderBusinessException(MSG_VOUCHER_NOT_FOUND);
+        }
+
+        Long count = voucherStorageMapper.selectCount(new LambdaQueryWrapper<VoucherStorage>()
+                .eq(VoucherStorage::getUserId, orders.getUserId())
+                .eq(VoucherStorage::getVoucherId, voucherId));
+        if (count != null && count > 0) {
+            throw new OrderBusinessException(MSG_VOUCHER_ALREADY_PURCHASED);
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        orderMapper.updateById(Orders.builder()
+                .id(orders.getId())
+                .status(Orders.COMPLETED)
+                .payStatus(Orders.PAID)
+                .payMethod(payMethod)
+                .checkoutTime(now)
+                .deliveryTime(now)
+                .build());
+
+        voucherStorageMapper.insert(VoucherStorage.builder()
+                .userId(orders.getUserId())
+                .voucherId(voucherId)
+                .orderId(orders.getId())
+                .name(voucher.getTitle())
+                .actualValue(voucher.getActualValue())
+                .status(VoucherStorageStatusConstant.UNUSED)
+                .createTime(now)
+                .expireTime(voucher.getEndTime())
+                .build());
+        voucherSeckillRedisService.confirmPurchase(voucherId, orders.getUserId());
     }
 
     private void markOrderCancelled(Orders orders, String cancelReason, String rejectionReason, boolean refund) {
@@ -632,11 +590,36 @@ public class OrderServiceImpl implements OrderService {
         orderMapper.updateById(updateOrder);
     }
 
+    private void restoreVoucherSeckillStock(Orders orders) {
+        if (!isSeckillVoucherOrder(orders)) {
+            return;
+        }
+
+        OrderDetail voucherOrderDetail = getVoucherOrderDetail(orders.getId());
+        if (voucherOrderDetail == null || voucherOrderDetail.getVoucherId() == null) {
+            return;
+        }
+
+        voucherMapper.restoreStock(voucherOrderDetail.getVoucherId());
+        voucherSeckillRedisService.rollbackReservation(voucherOrderDetail.getVoucherId(), orders.getUserId());
+    }
+
+    private boolean isSeckillVoucherOrder(Orders orders) {
+        return VoucherOrderConstant.SECKILL_VOUCHER_ORDER_REMARK.equals(orders.getRemark());
+    }
+
+    private OrderDetail getVoucherOrderDetail(Long orderId) {
+        return orderDetailMapper.selectOne(new LambdaQueryWrapper<OrderDetail>()
+                .eq(OrderDetail::getOrderId, orderId)
+                .isNotNull(OrderDetail::getVoucherId)
+                .last("limit 1"));
+    }
+
     private void sendOrderNotification(int type, Long orderId, String orderNumber) {
         Map<String, Object> payload = new HashMap<>();
         payload.put("type", type);
         payload.put("orderId", orderId);
-        payload.put("content", "订单号：" + orderNumber);
+        payload.put("content", "\u8ba2\u5355\u53f7\uff1a" + orderNumber);
         webSocketServer.sendToAllClient(JSON.toJSONString(payload));
     }
 

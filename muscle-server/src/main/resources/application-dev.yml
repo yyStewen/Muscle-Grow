@@ -19,3 +19,10 @@ muscle-grow:
     port: 6379
     password:
     database: 11
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: mgapp
+    password: 20041009
+    virtual-host: musclegrow

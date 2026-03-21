@@ -2,6 +2,13 @@ server:
   port: 8080
 
 spring:
+
+  rabbitmq:
+    host: ${muscle-grow.rabbitmq.host}
+    port: ${muscle-grow.rabbitmq.port}
+    username: ${muscle-grow.rabbitmq.username}
+    password: ${muscle-grow.rabbitmq.password}
+    virtual-host: ${muscle-grow.rabbitmq.virtual-host}
   profiles:
     active: dev
   main:

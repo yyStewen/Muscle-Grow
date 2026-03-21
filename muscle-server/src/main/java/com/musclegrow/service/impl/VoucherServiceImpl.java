@@ -10,6 +10,7 @@ import com.musclegrow.entity.Voucher;
 import com.musclegrow.exception.BaseException;
 import com.musclegrow.mapper.VoucherMapper;
 import com.musclegrow.result.PageResult;
+import com.musclegrow.service.VoucherSeckillRedisService;
 import com.musclegrow.service.VoucherService;
 import com.musclegrow.vo.VoucherVO;
 import org.springframework.beans.BeanUtils;
@@ -49,14 +50,15 @@ public class VoucherServiceImpl implements VoucherService {
     @Autowired
     private VoucherMapper voucherMapper;
 
+    @Autowired
+    private VoucherSeckillRedisService voucherSeckillRedisService;
+
     @Override
     public PageResult pageQuery(VoucherPageQueryDTO voucherPageQueryDTO) {
-        // 列表页需要展示实时状态，所以查询前先把已过期的券同步为“已结束”。
         syncExpiredStatus();
 
         Page<Voucher> page = new Page<>(voucherPageQueryDTO.getPage(), voucherPageQueryDTO.getPageSize());
         LambdaQueryWrapper<Voucher> queryWrapper = new LambdaQueryWrapper<>();
-
         queryWrapper.like(StringUtils.hasText(voucherPageQueryDTO.getTitle()),
                 Voucher::getTitle, voucherPageQueryDTO.getTitle());
         queryWrapper.ge(voucherPageQueryDTO.getBeginTime() != null,
@@ -79,21 +81,19 @@ public class VoucherServiceImpl implements VoucherService {
 
         Voucher voucher = new Voucher();
         BeanUtils.copyProperties(voucherDTO, voucher);
-        // 数据库存储只保留可持久化状态，“待开始”依赖 beginTime 动态计算。
         voucher.setStatus(resolvePersistStatus(voucherDTO.getStatus(), voucherDTO.getEndTime()));
         voucherMapper.insert(voucher);
+        syncVoucherSeckillStock(voucher);
     }
 
     @Override
     public VoucherVO getById(Long id) {
-        // 详情页回显同样依赖最新状态，避免前端拿到已经过期但未落库的数据。
         syncExpiredStatus();
         return toVO(getVoucherOrThrow(id));
     }
 
     @Override
     public void update(VoucherDTO voucherDTO) {
-        // 修改前先同步过期状态，避免已结束的券被继续编辑。
         syncExpiredStatus();
 
         Voucher currentVoucher = getVoucherOrThrow(voucherDTO.getId());
@@ -105,14 +105,13 @@ public class VoucherServiceImpl implements VoucherService {
 
         Voucher voucher = new Voucher();
         BeanUtils.copyProperties(voucherDTO, voucher);
-        // 编辑时和新增保持同一套状态落库规则，避免“待开始”被当作独立持久化状态。
         voucher.setStatus(resolvePersistStatus(voucherDTO.getStatus(), voucherDTO.getEndTime()));
         voucherMapper.updateById(voucher);
+        syncVoucherSeckillStock(voucher);
     }
 
     @Override
     public void startOrStop(Integer status, Long id) {
-        // 上下架动作依赖当前真实状态，先同步过期数据再做业务判断。
         syncExpiredStatus();
 
         if (!Objects.equals(status, VoucherStatusConstant.ON_SALE)
@@ -125,42 +124,35 @@ public class VoucherServiceImpl implements VoucherService {
             throw new BaseException(MSG_OPERATE_ENDED);
         }
 
-        Voucher updateVoucher = Voucher.builder()
+        voucherMapper.updateById(Voucher.builder()
                 .id(id)
                 .status(status)
-                .build();
-        voucherMapper.updateById(updateVoucher);
+                .build());
+        syncVoucherSeckillStock(voucherMapper.selectById(id));
     }
 
     private void validateVoucher(VoucherDTO voucherDTO, Long currentId) {
         if (!StringUtils.hasText(voucherDTO.getTitle())) {
             throw new BaseException(MSG_TITLE_REQUIRED);
         }
-
         if (voucherDTO.getPayValue() == null || voucherDTO.getPayValue().compareTo(BigDecimal.ZERO) < 0) {
             throw new BaseException(MSG_PAY_VALUE_INVALID);
         }
-
         if (voucherDTO.getActualValue() == null || voucherDTO.getActualValue().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BaseException(MSG_ACTUAL_VALUE_INVALID);
         }
-
         if (voucherDTO.getActualValue().compareTo(voucherDTO.getPayValue()) <= 0) {
             throw new BaseException(MSG_AMOUNT_COMPARE_INVALID);
         }
-
         if (voucherDTO.getStock() == null || voucherDTO.getStock() <= 0) {
             throw new BaseException(MSG_STOCK_INVALID);
         }
-
         if (voucherDTO.getBeginTime() == null || voucherDTO.getEndTime() == null) {
             throw new BaseException(MSG_TIME_REQUIRED);
         }
-
         if (!voucherDTO.getEndTime().isAfter(voucherDTO.getBeginTime())) {
             throw new BaseException(MSG_TIME_INVALID);
         }
-
         if (voucherDTO.getStatus() != null
                 && !Objects.equals(voucherDTO.getStatus(), VoucherStatusConstant.ON_SALE)
                 && !Objects.equals(voucherDTO.getStatus(), VoucherStatusConstant.OFF_SHELF)) {
@@ -189,19 +181,15 @@ public class VoucherServiceImpl implements VoucherService {
                     .ge(Voucher::getEndTime, now);
             return;
         }
-
         if (Objects.equals(status, VoucherStatusConstant.ENDED)) {
             queryWrapper.eq(Voucher::getStatus, VoucherStatusConstant.ENDED);
             return;
         }
-
         if (Objects.equals(status, VoucherStatusConstant.OFF_SHELF)) {
             queryWrapper.eq(Voucher::getStatus, VoucherStatusConstant.OFF_SHELF);
             return;
         }
-
         if (Objects.equals(status, VoucherStatusConstant.NOT_STARTED)) {
-            // “待开始”不是数据库中的独立状态，而是投放中且开始时间未到的展示态。
             queryWrapper.eq(Voucher::getStatus, VoucherStatusConstant.ON_SALE)
                     .gt(Voucher::getBeginTime, now);
             return;
@@ -213,8 +201,6 @@ public class VoucherServiceImpl implements VoucherService {
     private VoucherVO toVO(Voucher voucher) {
         VoucherVO voucherVO = new VoucherVO();
         BeanUtils.copyProperties(voucher, voucherVO);
-
-        // 前端列表和表单都使用展示状态，避免直接暴露持久化状态造成歧义。
         Integer displayStatus = resolveDisplayStatus(voucher);
         voucherVO.setDisplayStatus(displayStatus);
         voucherVO.setDisplayStatusLabel(resolveDisplayStatusLabel(displayStatus));
@@ -225,7 +211,6 @@ public class VoucherServiceImpl implements VoucherService {
         if (Objects.equals(voucher.getStatus(), VoucherStatusConstant.ENDED)) {
             return VoucherStatusConstant.ENDED;
         }
-
         if (Objects.equals(voucher.getStatus(), VoucherStatusConstant.OFF_SHELF)) {
             return VoucherStatusConstant.OFF_SHELF;
         }
@@ -234,7 +219,6 @@ public class VoucherServiceImpl implements VoucherService {
         if (voucher.getBeginTime() != null && voucher.getBeginTime().isAfter(now)) {
             return VoucherStatusConstant.NOT_STARTED;
         }
-
         return VoucherStatusConstant.ON_SALE;
     }
 
@@ -258,11 +242,9 @@ public class VoucherServiceImpl implements VoucherService {
         if (endTime != null && !endTime.isAfter(LocalDateTime.now())) {
             return VoucherStatusConstant.ENDED;
         }
-
         if (status == null) {
             return VoucherStatusConstant.ON_SALE;
         }
-
         return status;
     }
 
@@ -280,10 +262,20 @@ public class VoucherServiceImpl implements VoucherService {
                 .build();
 
         LambdaUpdateWrapper<Voucher> updateWrapper = new LambdaUpdateWrapper<>();
-        // 这里走批量更新，把所有已到结束时间但仍未落库的券统一标记为“已结束”。
         updateWrapper.ne(Voucher::getStatus, VoucherStatusConstant.ENDED)
                 .lt(Voucher::getEndTime, LocalDateTime.now());
 
         voucherMapper.update(voucher, updateWrapper);
+    }
+
+    private void syncVoucherSeckillStock(Voucher voucher) {
+        if (voucher == null || voucher.getId() == null) {
+            return;
+        }
+        if (Objects.equals(voucher.getStatus(), VoucherStatusConstant.ON_SALE)) {
+            voucherSeckillRedisService.refreshStock(voucher.getId(), voucher.getStock());
+            return;
+        }
+        voucherSeckillRedisService.removeStock(voucher.getId());
     }
 }
